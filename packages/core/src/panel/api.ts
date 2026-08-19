@@ -17,6 +17,7 @@ import { groupExceptions } from './exceptions.js';
 import { ExplainError, runExplain } from './explain.js';
 import { filterRequests, type RequestFilter, summarize } from './filters.js';
 import { type ReplayInput, runReplay } from './replay.js';
+import { blameLine } from './blame.js';
 import { toCurlScript, toHar } from './export.js';
 import { normalizeRoute, routeStats } from './routes.js';
 
@@ -320,6 +321,7 @@ export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null 
         mode: options.mode,
         bufferSize: options.bufferSize,
         replayEnabled: options.replay,
+        blameEnabled: options.blame,
       });
       return true;
     }
@@ -357,6 +359,18 @@ export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null 
         'text/x-shellscript; charset=utf-8',
         toCurlScript(shown, originOf(request)),
       );
+      return true;
+    }
+
+    if (route === '/api/blame' && method === 'POST') {
+      if (!options.blame) {
+        sendJson(response, 403, {
+          error:
+            'git blame from the panel is off. Outside local development it is enabled explicitly: loupe({ blame: true }).',
+        });
+        return true;
+      }
+      handleBlame(options, request, response);
       return true;
     }
 
@@ -442,6 +456,32 @@ export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null 
     });
     return true;
   };
+}
+
+function handleBlame(
+  options: ResolvedOptions,
+  request: IncomingMessage,
+  response: ServerResponse,
+): void {
+  void (async () => {
+    try {
+      const payload = (await readBody(request)) as {
+        frames?: Array<{ file?: unknown; line?: unknown }>;
+      };
+      const frames = Array.isArray(payload.frames) ? payload.frames.slice(0, 30) : [];
+
+      const blamed = await Promise.all(
+        frames.map(async (frame) => {
+          if (typeof frame.file !== 'string' || typeof frame.line !== 'number') return null;
+          return blameLine(frame.file, frame.line, options.stack.projectRoot);
+        }),
+      );
+      sendJson(response, 200, { frames: blamed });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      sendJson(response, 400, { error: `blame failed: ${reason}` });
+    }
+  })();
 }
 
 function handlePin(source: PanelSource, request: IncomingMessage, response: ServerResponse): void {

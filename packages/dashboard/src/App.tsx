@@ -186,7 +186,11 @@ export function App() {
 
       <main className="screen">
         {screen === 'exceptions' ? (
-          <ExceptionsScreen onOpenRequest={openRequest} />
+          <ExceptionsScreen
+            blameEnabled={meta?.blameEnabled ?? false}
+            onOpenRequest={openRequest}
+            onToast={setToast}
+          />
         ) : screen === 'routes' ? (
           <RoutesScreen
             onPickRoute={(route) => {

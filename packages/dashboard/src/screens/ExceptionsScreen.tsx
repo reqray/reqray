@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { type ExceptionGroup, fetchExceptions } from '../api';
+import {
+  type BlameLine,
+  type ExceptionGroup,
+  fetchBlame,
+  fetchExceptions,
+  openInEditor,
+} from '../api';
 import { ago, count } from '../format';
 
 /** Bar heights from the design: 3px minimum so an empty bucket stays visible. */
@@ -28,15 +34,29 @@ function Sparkline({ buckets }: { buckets: number[] }) {
 function Group({
   group,
   open,
+  blameEnabled,
   onToggle,
   onOpenRequest,
+  onToast,
 }: {
   group: ExceptionGroup;
   open: boolean;
+  blameEnabled: boolean;
   onToggle: () => void;
   onOpenRequest: (id: string) => void;
+  onToast: (message: string) => void;
 }) {
   const firstRequest = group.requestIds[0];
+  const [blame, setBlame] = useState<Array<BlameLine | null>>([]);
+  const projectFrames = group.frames.filter((frame) => frame.project).length;
+
+  // Blame is asked for only once the group is open: it shells out to git, and
+  // a list of collapsed groups would ask about every frame of every one.
+  useEffect(() => {
+    if (!open || !blameEnabled || blame.length > 0) return;
+    const frames = group.frames.map((frame) => ({ file: frame.file ?? '', line: frame.line ?? 0 }));
+    void fetchBlame(frames).then(setBlame);
+  }, [open, blameEnabled, group.frames, blame.length]);
 
   return (
     <div>
@@ -60,15 +80,59 @@ function Group({
 
       {open ? (
         <div className="exc-open">
-          <div className="label">STACK TRACE</div>
+          <div className="exc-stack-head">
+            <span className="label">STACK TRACE</span>
+            <span className="label">
+              {projectFrames} of {group.frames.length} frames in project code
+            </span>
+          </div>
           <div className="frames">
-            {group.frames.map((frame, index) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: stack order is the identity
-              <div key={index} className="frame" data-project={frame.project}>
-                <span className="ellipsis">{frame.raw}</span>
-                <span className="frame-tag">{frame.project ? 'project' : 'node_modules'}</span>
-              </div>
-            ))}
+            {group.frames.map((frame, index) => {
+              const line = blame[index];
+              const blamed = frame.project
+                ? line
+                  ? `${line.sha} · ${line.author} · ${ago(line.at)}`
+                  : blameEnabled
+                    ? '—'
+                    : ''
+                : 'node_modules';
+
+              // A project frame opens in the editor, so it is a button; the
+              // rest of the stack is text and must not pretend otherwise.
+              if (!frame.project || frame.file === null) {
+                return (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: stack order is the identity
+                  <div key={index} className="frame" data-project={frame.project}>
+                    <span className="ellipsis">{frame.raw}</span>
+                    <span className="frame-blame">{blamed}</span>
+                  </div>
+                );
+              }
+
+              const file = frame.file;
+              const at = frame.line ?? 1;
+              return (
+                <button
+                  // biome-ignore lint/suspicious/noArrayIndexKey: stack order is the identity
+                  key={index}
+                  type="button"
+                  className="frame"
+                  data-project={true}
+                  data-clickable={true}
+                  title={`open ${file}:${at} in the editor`}
+                  onClick={() => {
+                    openInEditor(file, at);
+                    onToast(`opening ${file}:${at} in the editor`);
+                  }}
+                >
+                  <span className="ellipsis">
+                    {frame.raw}
+                    <span className="s-acc"> ↗</span>
+                  </span>
+                  <span className="frame-blame">{blamed}</span>
+                </button>
+              );
+            })}
           </div>
           {firstRequest || group.test ? (
             <div className="exc-actions">
@@ -79,6 +143,20 @@ function Group({
                   onClick={() => onOpenRequest(firstRequest)}
                 >
                   view request #{firstRequest}
+                </button>
+              ) : null}
+              {group.origin && group.frames[0]?.file ? (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    const frame = group.frames.find((item) => item.project) ?? group.frames[0];
+                    if (!frame?.file) return;
+                    openInEditor(frame.file, frame.line ?? 1);
+                    onToast(`opening ${frame.file}:${frame.line} in the editor`);
+                  }}
+                >
+                  open in editor ↗
                 </button>
               ) : null}
               {group.test ? (
@@ -94,7 +172,15 @@ function Group({
   );
 }
 
-export function ExceptionsScreen({ onOpenRequest }: { onOpenRequest: (id: string) => void }) {
+export function ExceptionsScreen({
+  blameEnabled,
+  onOpenRequest,
+  onToast,
+}: {
+  blameEnabled: boolean;
+  onOpenRequest: (id: string) => void;
+  onToast: (message: string) => void;
+}) {
   const [groups, setGroups] = useState<ExceptionGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -160,7 +246,9 @@ export function ExceptionsScreen({ onOpenRequest }: { onOpenRequest: (id: string
                 return next;
               })
             }
+            blameEnabled={blameEnabled}
             onOpenRequest={onOpenRequest}
+            onToast={onToast}
           />
         ))}
       </div>

@@ -231,6 +231,41 @@ export interface PanelMeta {
   mode: 'development' | 'production';
   bufferSize: number;
   replayEnabled: boolean;
+  blameEnabled: boolean;
+}
+
+/** What `git blame` knows about one frame; `null` when it knows nothing. */
+export interface BlameLine {
+  sha: string;
+  author: string;
+  at: number;
+}
+
+/**
+ * Blame for a list of frames, in the same order.
+ *
+ * A failure is not worth surfacing: the column simply stays empty, which is
+ * also what an untracked file looks like.
+ */
+export async function fetchBlame(
+  frames: Array<{ file: string; line: number }>,
+): Promise<Array<BlameLine | null>> {
+  try {
+    const response = await fetch(`${apiBase()}/blame`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ frames }),
+    });
+    if (!response.ok) return frames.map(() => null);
+    return ((await response.json()) as { frames: Array<BlameLine | null> }).frames;
+  } catch {
+    return frames.map(() => null);
+  }
+}
+
+/** Opens a file in the editor via its URL scheme. */
+export function openInEditor(file: string, line: number): void {
+  window.location.href = `vscode://file/${file}:${line}`;
 }
 
 export async function fetchMeta(signal?: AbortSignal): Promise<PanelMeta> {

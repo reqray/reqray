@@ -850,6 +850,38 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     await page.keyboard.press('Escape');
   });
 
+  it('blames the project frames and opens them in an editor', async () => {
+    await page.evaluate(() => {
+      const nav = [...document.querySelectorAll('.nav button')];
+      (nav.find((button) => button.textContent === 'Exceptions') as HTMLButtonElement)?.click();
+    });
+    await page.waitForSelector('.frame');
+
+    // The summary counts what is worth reading in the stack.
+    const head = await page.$eval('.exc-stack-head', (node) => node.textContent ?? '');
+    expect(head).toMatch(/\d+ of \d+ frames in project code/);
+
+    // The demo runs inside this repository, so blame has something to say —
+    // and where it has nothing, the column shows a dash rather than blank.
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll('.frame[data-project="true"] .frame-blame')].some(
+          (node) => (node.textContent ?? '').length > 0,
+        ),
+      { timeout: 15_000 },
+    );
+
+    // node_modules frames are not click targets.
+    const plain = await page.$('.frame[data-project="false"]');
+    expect(await plain?.evaluate((node) => node.tagName)).toBe('DIV');
+
+    const project = await page.$('.frame[data-clickable="true"]');
+    expect(await project?.evaluate((node) => node.tagName)).toBe('BUTTON');
+    await project?.click();
+    await page.waitForSelector('.toast', { visible: true });
+    expect(await page.$eval('.toast', (node) => node.textContent ?? '')).toContain('editor');
+  });
+
   it('shows exception groups with a stack', async () => {
     await page.evaluate(() => {
       const nav = [...document.querySelectorAll('.nav button')];

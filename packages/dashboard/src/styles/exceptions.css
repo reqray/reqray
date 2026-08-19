@@ -100,9 +100,22 @@
   border: 1px solid var(--line);
 }
 
+.exc-stack-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+/* Buttons and divs share the row: strip the button chrome. */
 .frame {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  background: transparent;
+  color: var(--fg3);
+  text-align: left;
+  /* A fixed right column, wide enough for "sha · author · 3 days ago": blame
+     lines vary in width, and a ragged edge makes the list hard to scan. */
+  grid-template-columns: minmax(0, 1fr) 290px;
   gap: 12px;
   padding: 4px 10px;
   border-top: 1px solid var(--line2);
@@ -117,8 +130,21 @@
   box-shadow: inset 2px 0 0 0 var(--acc);
 }
 
-.frame-tag {
+.frame-blame {
+  text-align: right;
   color: var(--fg3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Only project frames open in an editor; the rest are text. */
+.frame[data-clickable="true"] {
+  cursor: pointer;
+}
+
+.frame[data-clickable="true"]:hover {
+  background: var(--bg3);
 }
 
 .exc-actions {

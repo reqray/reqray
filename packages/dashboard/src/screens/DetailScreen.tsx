@@ -29,7 +29,7 @@ function Findings({ detail }: { detail: RequestDetail }) {
   return (
     <section className="findings">
       <div className="findings-label label">FINDINGS · {detail.findings.length}</div>
-      {detail.findings.map((finding, index) => {
+      {detail.findings.map((finding) => {
         // Clamped: spans that overlap can add up to more than the wall-clock
         // time, and "112% of request time" reads as a bug, not a measurement.
         const share =
@@ -40,8 +40,10 @@ function Findings({ detail }: { detail: RequestDetail }) {
             className="callout"
             data-severity={finding.severity}
             // Two findings from one detector differ by their evidence; a
-            // budget finding is unique per request anyway.
-            key={`${finding.detector}-${index}`}
+            // budget finding is unique per request, so its detector is enough.
+            key={`${finding.detector}-${
+              finding.evidence.kind === 'budget' ? '' : finding.evidence.fingerprint
+            }`}
           >
             <div className="callout-head">
               <span className="badge-nplus" data-severity={finding.severity}>

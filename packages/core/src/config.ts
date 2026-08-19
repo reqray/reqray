@@ -167,6 +167,13 @@ export interface LoupeOptions {
    */
   readonly explain?: boolean;
   /**
+   * Allow `git blame` on the frames of an exception, from the panel.
+   *
+   * Local development only by default: it runs `git` on the machine the panel
+   * runs on, and outside development that machine is a server.
+   */
+  readonly blame?: boolean;
+  /**
    * Capture `console.*` lines written during request handling into the
    * request's record. Terminal output is never altered; `false` turns the
    * capture off entirely. pino and winston write past `console` and are not
@@ -203,6 +210,7 @@ export interface ResolvedOptions {
   readonly panel: ResolvedPanelOptions | null;
   readonly replay: boolean;
   readonly explain: boolean;
+  readonly blame: boolean;
   readonly logs: boolean;
   readonly collectSqlValues: boolean;
 }
@@ -368,6 +376,7 @@ export function resolveOptions(options: LoupeOptions = {}): ResolvedOptions {
     }),
     replay: options.replay ?? isLocalDevelopment,
     explain: options.explain ?? isLocalDevelopment,
+    blame: options.blame ?? isLocalDevelopment,
     logs: options.logs ?? true,
     collectSqlValues: options.collectSqlValues ?? false,
     panel:

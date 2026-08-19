@@ -119,6 +119,7 @@ export {
   type ReplayMetrics,
   runReplay,
 } from './panel/replay.js';
+export { type BlameLine, blameLine, clearBlameCache, parsePorcelain } from './panel/blame.js';
 export { toCurlScript, toHar } from './panel/export.js';
 export {
   normalizeRoute,
