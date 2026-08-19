@@ -1,4 +1,4 @@
-import type { Finding, RequestDetail, Span } from './api';
+import { type Finding, isRunEvidence, type RequestDetail, type Span } from './api';
 import { oneLine } from './format';
 
 /** One bar of the waterfall. `gap` is time no instrumentation covers. */
@@ -11,6 +11,8 @@ export interface WaterfallBar {
   duration: number;
   /** Detector id when the bar is a collapsed finding run, `null` otherwise. */
   finding: string | null;
+  /** Detector ids that merely mark this span — duplicates, for instance. */
+  readonly marks?: readonly string[];
 }
 
 /** Gaps shorter than this are noise, not an answer to "where did time go". */
@@ -80,9 +82,16 @@ function depthOf(span: Span, byId: Map<number, Span>): number {
  */
 export function buildWaterfall(detail: RequestDetail): WaterfallBar[] {
   const byId = new Map(detail.spans.map((span) => [span.id, span]));
+  // Runs collapse into one bar; everything else only badges the spans it
+  // names, so a duplicate two seconds apart does not draw a bar over
+  // everything between its two calls.
   const grouped = new Map<number, Finding>();
+  const marked = new Map<number, string[]>();
   for (const finding of detail.findings) {
-    for (const id of finding.evidence.spanIds) grouped.set(id, finding);
+    for (const id of finding.evidence.spanIds) {
+      if (isRunEvidence(finding.evidence)) grouped.set(id, finding);
+      else marked.set(id, [...(marked.get(id) ?? []), finding.detector]);
+    }
   }
 
   const bars: WaterfallBar[] = [];
@@ -91,6 +100,7 @@ export function buildWaterfall(detail: RequestDetail): WaterfallBar[] {
   for (const span of detail.spans) {
     const finding = grouped.get(span.id);
     if (!finding) {
+      const marks = marked.get(span.id);
       bars.push({
         key: `s${span.id}`,
         kind: span.kind,
@@ -99,6 +109,7 @@ export function buildWaterfall(detail: RequestDetail): WaterfallBar[] {
         startedAt: span.startedAt,
         duration: span.duration,
         finding: null,
+        ...(marks ? { marks } : {}),
       });
       continue;
     }
@@ -115,7 +126,7 @@ export function buildWaterfall(detail: RequestDetail): WaterfallBar[] {
     const end = Math.max(...members.map((member) => member.startedAt + member.duration));
 
     bars.push({
-      key: `f${finding.detector}${finding.evidence.fingerprint}`,
+      key: `f${finding.detector}${isRunEvidence(finding.evidence) ? finding.evidence.fingerprint : ''}`,
       kind: span.kind,
       label: `${members.length}× ${labelOf(span)}`,
       depth: depthOf(span, byId),

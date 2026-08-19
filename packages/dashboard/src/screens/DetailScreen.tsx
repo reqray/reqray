@@ -6,7 +6,7 @@ import {
   type RequestDetail,
   type Span,
 } from '../api';
-import { buildBriefing } from '../briefing';
+import { buildBriefing, evidenceLine } from '../briefing';
 import { ReplayDrawer } from '../components/ReplayDrawer';
 import { badgeFor, Waterfall } from '../components/Waterfall';
 import { clock, duration, durationTone, methodTone, oneLine, statusTone } from '../format';
@@ -22,28 +22,37 @@ const TABS: Array<[Tab, string]> = [
   ['logs', 'Logs'],
 ];
 
-function Callout({ detail }: { detail: RequestDetail }) {
+function Findings({ detail }: { detail: RequestDetail }) {
   if (detail.findings.length === 0) return null;
 
   return (
-    <>
-      {detail.findings.map((finding) => {
+    <section className="findings">
+      <div className="findings-label label">FINDINGS · {detail.findings.length}</div>
+      {detail.findings.map((finding, index) => {
         // Clamped: spans that overlap can add up to more than the wall-clock
         // time, and "112% of request time" reads as a bug, not a measurement.
         const share =
           detail.durationMs > 0 ? Math.min(100, (finding.costMs / detail.durationMs) * 100) : 0;
 
         return (
-          <section className="callout" key={`${finding.detector}-${finding.evidence.fingerprint}`}>
+          <section
+            className="callout"
+            data-severity={finding.severity}
+            // Two findings from one detector differ by their evidence; a
+            // budget finding is unique per request anyway.
+            key={`${finding.detector}-${index}`}
+          >
             <div className="callout-head">
-              <span className="badge-nplus">{badgeFor(finding.detector)}</span>
+              <span className="badge-nplus" data-severity={finding.severity}>
+                {badgeFor(finding.detector)}
+              </span>
               <span className="callout-title">{finding.title}</span>
               <span className="spacer" />
               <span className="mono s-fg2" style={{ fontSize: 11 }}>
                 {duration(finding.costMs)} recoverable · {Math.round(share)}% of request time
               </span>
             </div>
-            <div className="callout-sql ellipsis">{oneLine(finding.evidence.sample)}</div>
+            <div className="callout-sql ellipsis">{oneLine(evidenceLine(finding))}</div>
             <div className="callout-hint">
               {finding.callsite
                 ? `called from ${finding.callsite.relative}:${finding.callsite.line} → ${finding.hint}`
@@ -52,7 +61,7 @@ function Callout({ detail }: { detail: RequestDetail }) {
           </section>
         );
       })}
-    </>
+    </section>
   );
 }
 
@@ -270,6 +279,15 @@ function CacheTab({ detail }: { detail: RequestDetail }) {
   );
   if (operations.length === 0) return <p className="s-dim mono">no cache operations</p>;
 
+  // How many times each key is read: the same key twice in one request is
+  // work that did not need doing, and the detector says so on the findings
+  // block — here it is marked where it happened.
+  const reads = new Map<string, number>();
+  for (const operation of operations) {
+    if (operation.operation === 'get')
+      reads.set(operation.key, (reads.get(operation.key) ?? 0) + 1);
+  }
+
   return (
     <div>
       <div className="cache-row label">
@@ -281,7 +299,12 @@ function CacheTab({ detail }: { detail: RequestDetail }) {
       {operations.map((operation) => (
         <div key={operation.id} className="cache-row">
           <span>{operation.operation.toUpperCase()}</span>
-          <span className="ellipsis">{operation.key}</span>
+          <span className="ellipsis">
+            {operation.key}
+            {operation.operation === 'get' && (reads.get(operation.key) ?? 0) > 1 ? (
+              <span className="dup-mark">DUP ×{reads.get(operation.key)}</span>
+            ) : null}
+          </span>
           <span className={`cell-right ${operation.hit ? 's-ok' : 's-warn'}`}>
             {operation.hit === null ? 'OK' : operation.hit ? 'HIT' : 'MISS'}
           </span>
@@ -465,7 +488,7 @@ export function DetailScreen({
 
       <div className="detail-body">
         <Waterfall detail={detail} />
-        <Callout detail={detail} />
+        <Findings detail={detail} />
 
         <div className="tabs" role="tablist">
           {TABS.map(([value, label]) => (

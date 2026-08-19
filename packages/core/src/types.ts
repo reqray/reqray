@@ -192,8 +192,37 @@ export interface SequentialHttpEvidence {
   readonly spanIds: readonly number[];
 }
 
+/** Evidence for the duplicate-work detectors, HTTP and cache alike. */
+export interface DuplicateEvidence {
+  readonly kind: 'duplicate';
+  /** How many identical calls were made. */
+  readonly repeats: number;
+  /** What made them identical: the URL, or the cache key. */
+  readonly fingerprint: string;
+  readonly sample: string;
+  readonly totalMs: number;
+  readonly spanIds: readonly number[];
+}
+
+/** Evidence for the budget detector: where a slow request spent its time. */
+export interface BudgetEvidence {
+  readonly kind: 'budget';
+  readonly durationMs: number;
+  readonly budgetMs: number;
+  /** Time inside outgoing HTTP calls, ms. */
+  readonly externalMs: number;
+  /** Time inside SQL queries, ms. */
+  readonly sqlMs: number;
+  /** Always empty: the finding is about the request, not about spans. */
+  readonly spanIds: readonly number[];
+}
+
 /** Finding specifics. Extended as new detectors land. */
-export type FindingEvidence = NPlusOneEvidence | SequentialHttpEvidence;
+export type FindingEvidence =
+  | NPlusOneEvidence
+  | SequentialHttpEvidence
+  | DuplicateEvidence
+  | BudgetEvidence;
 
 /**
  * Detector finding: what is wrong, where, what it costs and how to fix it.

@@ -368,6 +368,42 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     }
   });
 
+  it('shows a findings block with a card per detector', async () => {
+    await fetch(`${base}/api/invoice/1`);
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('.row .ellipsis')].some((node) =>
+        node.textContent?.includes('/api/invoice/1'),
+      ),
+    );
+
+    const list = (await (await fetch(`${base}/_loupe/api/requests`)).json()) as {
+      requests: Array<{ id: string; path: string }>;
+    };
+    const invoice = list.requests.find((row) => row.path === '/api/invoice/1');
+
+    const fresh = await browser.newPage();
+    try {
+      await fresh.goto(`${base}/_loupe/#l/req/${invoice?.id}`, { waitUntil: 'domcontentloaded' });
+      await fresh.waitForSelector('.findings');
+
+      expect(await fresh.$eval('.findings-label', (node) => node.textContent ?? '')).toContain(
+        'FINDINGS',
+      );
+      const card = await fresh.$eval('.callout', (node) => node.textContent ?? '');
+      expect(card).toContain('identical calls to the same URL');
+      expect(card).toContain('src/shop.js');
+
+      // Duplicates badge their own spans rather than collapsing the waterfall
+      // into one bar spanning everything between them.
+      const labels = await fresh.$$eval('.wf-span .wf-label', (nodes) =>
+        nodes.map((node) => node.textContent ?? ''),
+      );
+      expect(labels.filter((label) => label.includes('DUP'))).toHaveLength(2);
+    } finally {
+      await fresh.close();
+    }
+  });
+
   it('the routes screen ranks endpoints and filters the list', async () => {
     await page.evaluate(() => {
       const nav = [...document.querySelectorAll('.nav button')];
@@ -530,7 +566,7 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     );
     const durationHeader = headers[labels.findIndex((label) => label.includes('DURATION'))];
 
-    // First click: slowest on top — /api/report and its 600 ms timer.
+    // First click: slowest on top — /api/report and its long timer.
     await durationHeader?.click();
     await page.waitForFunction(() =>
       (document.querySelector('.row')?.textContent ?? '').includes('/api/report'),
@@ -649,7 +685,7 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
   it('slow report: the uninstrumented bar answers where the time went', async () => {
     const fresh = await openDetail('/api/report');
     try {
-      // The header owns the answer: "2 spans · 604 ms total · 602 ms uninstrumented".
+      // The header owns the answer: "2 spans · 854 ms total · 852 ms uninstrumented".
       const head = await fresh.$eval('.waterfall-head', (node) => node.textContent ?? '');
       const gapMs = Number(/([\d,.]+) ms uninstrumented/.exec(head)?.[1]?.replace(',', '') ?? 0);
       expect(gapMs).toBeGreaterThan(400);

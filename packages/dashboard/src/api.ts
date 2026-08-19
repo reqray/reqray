@@ -75,21 +75,43 @@ export type Span = SpanCommon &
     | { kind: 'cache'; operation: 'get' | 'set' | 'del'; key: string; hit: boolean | null }
   );
 
+/** Evidence for the detectors that group repeated spans. */
+export interface RepeatEvidence {
+  kind: 'n_plus_one' | 'sequential_http' | 'duplicate';
+  repeats: number;
+  fingerprint: string;
+  sample: string;
+  totalMs: number;
+  spanIds: number[];
+}
+
+/** Evidence for the budget detector: about the request, not about spans. */
+export interface BudgetEvidence {
+  kind: 'budget';
+  durationMs: number;
+  budgetMs: number;
+  externalMs: number;
+  sqlMs: number;
+  spanIds: number[];
+}
+
 export interface Finding {
   detector: string;
   severity: 'info' | 'warn' | 'critical';
   title: string;
   costMs: number;
   callsite: Callsite | null;
-  evidence: {
-    kind: 'n_plus_one' | 'sequential_http';
-    repeats: number;
-    fingerprint: string;
-    sample: string;
-    totalMs: number;
-    spanIds: number[];
-  };
+  evidence: RepeatEvidence | BudgetEvidence;
   hint: string;
+}
+
+/**
+ * The detectors whose findings are a *run* of spans, which the waterfall
+ * collapses into one bar. A duplicate is not a run — its spans sit far apart,
+ * and one bar spanning them would swallow everything in between.
+ */
+export function isRunEvidence(evidence: Finding['evidence']): evidence is RepeatEvidence {
+  return evidence.kind === 'n_plus_one' || evidence.kind === 'sequential_http';
 }
 
 export interface LogEntry {

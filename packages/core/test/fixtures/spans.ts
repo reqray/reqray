@@ -167,6 +167,34 @@ class ScopeBuilder {
     return this;
   }
 
+  /**
+   * A cache operation.
+   *
+   * There is no cache instrumentation yet, so these spans exist only in
+   * fixtures — the detector that reads them has to be ready for the day one
+   * lands, and this is how it is held to that.
+   */
+  cache(spec: {
+    key: string;
+    operation?: 'get' | 'set' | 'del';
+    duration?: number;
+    hit?: boolean;
+    callsite?: string | null;
+  }): this {
+    const duration = spec.duration ?? 0.3;
+    this.#scope.addSpan({
+      kind: 'cache',
+      operation: spec.operation ?? 'get',
+      key: spec.key,
+      hit: spec.hit ?? true,
+      duration,
+      startTime: this.#cursor,
+      callsite: parseCallsite(spec.callsite),
+    });
+    this.#cursor += duration;
+    return this;
+  }
+
   /** Silence between spans — polling pauses, unrelated compute. */
   pause(durationMs: number): this {
     this.#cursor += durationMs;

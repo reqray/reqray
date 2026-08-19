@@ -216,13 +216,20 @@ function suite(name: string, backend: Backend, enabled: boolean): void {
         }
       });
 
-      const findings = runDetectors(scope, {
-        ...options,
-        detect: {
-          nPlusOne: { threshold: 3, minWastedMs: 0, maxOverlapRatio: 0.2, maxGapMs: 100 },
-          sequentialHttp: null,
+      const findings = runDetectors(
+        scope,
+        {
+          ...options,
+          detect: {
+            nPlusOne: { threshold: 3, minWastedMs: 0, maxOverlapRatio: 0.2, maxGapMs: 100 },
+            sequentialHttp: null,
+            duplicateHttp: null,
+            duplicateCache: null,
+            slowBudget: null,
+          },
         },
-      });
+        { durationMs: 50, status: 200 },
+      );
 
       expect(findings).toHaveLength(1);
       expect(findings[0]?.callsite?.relative).toContain('pg.integration.test.ts');

@@ -8,7 +8,7 @@
  * clipboard, works with any assistant and never leaves the machine by itself.
  */
 
-import type { ExplainResult, RequestDetail, Span } from './api';
+import type { ExplainResult, Finding, RequestDetail, Span } from './api';
 import { oneLine } from './format';
 import { buildWaterfall } from './waterfall';
 
@@ -49,6 +49,18 @@ function bodyLine(name: string, body: RequestDetail['requestBody']): string | nu
 }
 
 /** Builds the markdown briefing for one recorded request. */
+/**
+ * The one line of evidence a finding can show.
+ *
+ * A budget finding has no sample call to quote — it describes the request as
+ * a whole, so it reports where the time went instead.
+ */
+export function evidenceLine(finding: Finding): string {
+  const evidence = finding.evidence;
+  if (evidence.kind !== 'budget') return evidence.sample;
+  return `${Math.round(evidence.durationMs)} ms total · ${Math.round(evidence.externalMs)} ms external · ${Math.round(evidence.sqlMs)} ms SQL`;
+}
+
 export function buildBriefing(
   detail: RequestDetail,
   explains?: ReadonlyMap<number, ExplainResult>,
@@ -70,7 +82,8 @@ export function buildBriefing(
       if (finding.callsite) {
         lines.push(`  code line: ${finding.callsite.relative}:${finding.callsite.line}`);
       }
-      lines.push(`  sample: ${oneLine(finding.evidence.sample)}`);
+      const sample = evidenceLine(finding);
+      if (sample) lines.push(`  sample: ${oneLine(sample)}`);
       lines.push(`  hint: ${finding.hint}`);
     }
     lines.push('');

@@ -12,7 +12,9 @@ import { scenario } from '../fixtures/spans.js';
 const options: NPlusOneOptions = nPlusOne.defaultOptions;
 
 const run = (scope: Parameters<typeof nPlusOne.run>[0], overrides?: Partial<NPlusOneOptions>) =>
-  nPlusOne.run(scope, { ...options, ...overrides });
+  // The N+1 detector ignores the request facts; the budget detector is the
+  // one that reads them.
+  nPlusOne.run(scope, { ...options, ...overrides }, { durationMs: 100, status: 200 });
 
 const ORDERS = 'SELECT id, total FROM orders WHERE user_id = 8812 ORDER BY created_at DESC';
 const lineItems = (orderId: number) => `SELECT * FROM line_items WHERE order_id = ${orderId}`;
@@ -59,7 +61,8 @@ describe('finds', () => {
 
     const [finding] = run(scope);
 
-    expect(finding?.evidence.totalMs).toBeCloseTo(42.3, 5);
+    expect(finding?.evidence).toMatchObject({ kind: 'n_plus_one' });
+    expect((finding?.evidence as { totalMs: number }).totalMs).toBeCloseTo(42.3, 5);
     expect(finding?.costMs).toBeCloseTo(41.4, 5);
   });
 
@@ -93,7 +96,9 @@ describe('finds', () => {
     const findings = run(builder.done());
 
     expect(findings).toHaveLength(2);
-    expect(findings.map((f) => f.evidence.repeats).sort((a, b) => a - b)).toEqual([6, 36]);
+    expect(
+      findings.map((f) => (f.evidence as { repeats: number }).repeats).sort((a, b) => a - b),
+    ).toEqual([6, 36]);
   });
 
   it('raises severity along with the cost', () => {

@@ -295,6 +295,40 @@ describe('demo application', () => {
     expect(exceptions.groups[0]?.test).toBe(testName);
   });
 
+  it('finds the same external call made twice, and the budget breach', async () => {
+    await fetch(`${base}/api/invoice/1`);
+    await fetch(`${base}/api/report`);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const list = (await (await fetch(`${base}/_loupe/api/requests`)).json()) as {
+      requests: Array<Row & { httpCount: number }>;
+    };
+
+    const invoice = list.requests.find((item) => item.path === '/api/invoice/1');
+    expect(invoice?.httpCount).toBe(2);
+    const invoiceDetail = (await (
+      await fetch(`${base}/_loupe/api/requests/${invoice?.id}`)
+    ).json()) as { findings: Finding[] };
+    const duplicate = invoiceDetail.findings.find((item) => item.detector === 'dup_http');
+
+    expect(duplicate).toBeDefined();
+    expect(duplicate?.callsite?.relative).toBe('src/shop.js');
+    // Both readers are named, since neither knows about the other.
+    expect(duplicate?.hint).toContain('src/shop.js');
+
+    // The slow report is over the 700 ms budget, and the finding says where
+    // the time went — which here is nowhere Loupe can see.
+    const report = list.requests.find((item) => item.path === '/api/report');
+    const reportDetail = (await (
+      await fetch(`${base}/_loupe/api/requests/${report?.id}`)
+    ).json()) as { findings: Finding[] };
+    const budget = reportDetail.findings.find((item) => item.detector === 'slow_budget');
+
+    expect(budget).toBeDefined();
+    expect(budget?.title).toContain('700');
+    expect(budget?.hint).toContain('not covered by any instrumentation');
+  });
+
   it('groups the exception and shows where it came from', async () => {
     await fetch(`${base}/api/boom`);
     await new Promise((resolve) => setTimeout(resolve, 300));

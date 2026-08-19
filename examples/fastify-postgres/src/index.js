@@ -6,6 +6,7 @@ import { listOneOrder, listOrdersEagerly, listOrdersWithNPlusOne } from './order
 import { listPricesInParallel, listPricesSequentially } from './prices.js';
 import {
   checkout,
+  invoice,
   listOrdersFlaky,
   login,
   registerUser,
@@ -95,6 +96,7 @@ app.post('/api/register', async (request) => registerUser(db.pool, request.body)
 let flakyTurn = 0;
 app.get('/api/orders/flaky', async () => listOrdersFlaky(db.pool, 1, flakyTurn++ % 2 === 1));
 app.get('/api/report', async () => slowReport(db.pool));
+app.get('/api/invoice/:id', async (request) => invoice(db.pool, self, Number(request.params.id)));
 
 app.get('/api/boom', async () => {
   const order = undefined;
@@ -158,7 +160,8 @@ console.log(`
   no seq      ${base}/api/prices/parallel
   search      ${base}/api/search?q=walnut     (EXPLAIN will show a Seq Scan)
   flaky       ${base}/api/orders/flaky        (for comparing two requests)
-  slow        ${base}/api/report              (600 ms outside instrumentation — the uninstrumented bar)
+  slow        ${base}/api/report              (over the budget; the time is outside instrumentation)
+  duplicate   ${base}/api/invoice/1           (the same external call made twice)
   exception   ${base}/api/boom
   POST        /api/login, /api/checkout       (masking, the "incident")
   POST        /api/register                   (password hashing = a gap mid-waterfall)

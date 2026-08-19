@@ -10,6 +10,9 @@ import { scenario } from '../fixtures/spans.js';
 
 const options = resolveOptions({ mode: 'development' });
 
+/** A request that is not itself slow: the budget detector stays out of the way. */
+const FACTS = { durationMs: 100, status: 200 };
+
 afterEach(() => {
   resetDetectors();
   setLogSink(null);
@@ -29,7 +32,7 @@ describe('running detectors', () => {
       callsite: 'src/b.ts:1',
     }));
 
-    const findings = runDetectors(builder.done(), options);
+    const findings = runDetectors(builder.done(), options, FACTS);
     const costs = findings.map((finding) => finding.costMs);
 
     expect(costs).toHaveLength(2);
@@ -45,7 +48,7 @@ describe('running detectors', () => {
       }))
       .done();
 
-    expect(runDetectors(scope, resolveOptions({ detect: { nPlusOne: false } }))).toEqual([]);
+    expect(runDetectors(scope, resolveOptions({ detect: { nPlusOne: false } }), FACTS)).toEqual([]);
   });
 
   it('a crashed detector is disabled and warns exactly once', () => {
@@ -58,13 +61,16 @@ describe('running detectors', () => {
       },
     } as unknown as RequestScope;
 
-    expect(() => runDetectors(broken, options)).not.toThrow();
-    expect(runDetectors(broken, options)).toEqual([]);
-    // One warning per detector — both looked into the broken scope — and
-    // never a second one for the same detector.
-    expect(warn).toHaveBeenCalledTimes(2);
-    expect(warn.mock.calls[0]?.[0]).toContain('n_plus_one');
-    expect(warn.mock.calls[1]?.[0]).toContain('sequential_http');
+    expect(() => runDetectors(broken, options, FACTS)).not.toThrow();
+    expect(runDetectors(broken, options, FACTS)).toEqual([]);
+    // One warning per detector that looked into the broken scope, and never a
+    // second one for the same detector. The budget detector is not among them:
+    // this request is inside its budget, so it never reaches the spans.
+    const warned = warn.mock.calls.map((call) => String(call[0]));
+    expect(warned).toHaveLength(4);
+    for (const id of ['n_plus_one', 'sequential_http', 'dup_http', 'dup_cache']) {
+      expect(warned.some((message) => message.includes(id))).toBe(true);
+    }
 
     // While the detector is disabled, healthy requests get no findings
     // either — the deliberate price of a failed detector not taking the rest
@@ -76,9 +82,9 @@ describe('running detectors', () => {
         callsite: 'src/a.ts:1',
       }))
       .done();
-    expect(runDetectors(healthy, options)).toEqual([]);
+    expect(runDetectors(healthy, options, FACTS)).toEqual([]);
 
     resetDetectors();
-    expect(runDetectors(healthy, options)).toHaveLength(1);
+    expect(runDetectors(healthy, options, FACTS)).toHaveLength(1);
   });
 });

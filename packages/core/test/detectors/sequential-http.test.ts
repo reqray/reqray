@@ -16,7 +16,7 @@ const options: SequentialHttpOptions = sequentialHttp.defaultOptions;
 const run = (
   scope: Parameters<typeof sequentialHttp.run>[0],
   overrides?: Partial<SequentialHttpOptions>,
-) => sequentialHttp.run(scope, { ...options, ...overrides });
+) => sequentialHttp.run(scope, { ...options, ...overrides }, { durationMs: 100, status: 200 });
 
 const user = (id: number) => `https://api.example.com/users/${id}`;
 const LINE = 'src/services/enrich.ts:42';

@@ -13,5 +13,16 @@ export interface Detector<Options> {
   /** Identifier that ends up in `Finding.detector`. */
   readonly id: string;
   readonly defaultOptions: Options;
-  run(scope: RequestScope, options: Options): Finding[];
+  run(scope: RequestScope, options: Options, request: FinishedRequest): Finding[];
+}
+
+/**
+ * Facts about the finished request that are not on the scope.
+ *
+ * The wall duration is measured by the adapter when the response ends;
+ * deriving it inside a detector would measure the finalization delay too.
+ */
+export interface FinishedRequest {
+  readonly durationMs: number;
+  readonly status: number;
 }

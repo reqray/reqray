@@ -6,10 +6,14 @@
  * {@link ResolvedOptions}.
  */
 
+import type { DuplicateCacheOptions, DuplicateHttpOptions } from './detectors/duplicates.js';
+import { duplicateCache, duplicateHttp } from './detectors/duplicates.js';
 import type { NPlusOneOptions } from './detectors/n-plus-one.js';
 import { nPlusOne } from './detectors/n-plus-one.js';
 import type { SequentialHttpOptions } from './detectors/sequential-http.js';
 import { sequentialHttp } from './detectors/sequential-http.js';
+import type { SlowBudgetOptions } from './detectors/slow-budget.js';
+import { slowBudget } from './detectors/slow-budget.js';
 import type { PanelGate } from './panel.js';
 
 /** Operating mode. Affects stack capture and the share of retained requests. */
@@ -26,6 +30,12 @@ export interface DetectOptions {
   readonly nPlusOne?: Partial<NPlusOneOptions> | false;
   /** `false` disables the sequential-HTTP detector completely. */
   readonly sequentialHttp?: Partial<SequentialHttpOptions> | false;
+  /** Identical outbound reads in one request. */
+  readonly duplicateHttp?: Partial<DuplicateHttpOptions> | false;
+  /** The same cache key read more than once in one request. */
+  readonly duplicateCache?: Partial<DuplicateCacheOptions> | false;
+  /** Wall-time budget for a request; `false` turns the check off. */
+  readonly slowBudget?: Partial<SlowBudgetOptions> | false;
 }
 
 /** @see DetectOptions */
@@ -34,6 +44,12 @@ export interface ResolvedDetectOptions {
   readonly nPlusOne: NPlusOneOptions | null;
   /** `null` — detector disabled. */
   readonly sequentialHttp: SequentialHttpOptions | null;
+  /** `null` — detector disabled. */
+  readonly duplicateHttp: DuplicateHttpOptions | null;
+  /** `null` — detector disabled. */
+  readonly duplicateCache: DuplicateCacheOptions | null;
+  /** `null` — detector disabled. */
+  readonly slowBudget: SlowBudgetOptions | null;
 }
 
 /** Masking of sensitive data. Runs before the buffer write. */
@@ -329,6 +345,12 @@ export function resolveOptions(options: LoupeOptions = {}): ResolvedOptions {
         sequentialHttp.defaultOptions,
         options.detect?.sequentialHttp,
       ),
+      duplicateHttp: resolveDetector(duplicateHttp.defaultOptions, options.detect?.duplicateHttp),
+      duplicateCache: resolveDetector(
+        duplicateCache.defaultOptions,
+        options.detect?.duplicateCache,
+      ),
+      slowBudget: resolveDetector(slowBudget.defaultOptions, options.detect?.slowBudget),
     }),
     sampling: Object.freeze({
       // Locally everything is visible; in production the stream is cut back —

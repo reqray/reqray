@@ -42,12 +42,19 @@ export { instrumentConsole, uninstrumentConsole } from './console-capture.js';
 export { current, enterScope, runInScope, runOutsideScope } from './context.js';
 export {
   type Detector,
+  type DuplicateCacheOptions,
+  type DuplicateHttpOptions,
+  duplicateCache,
+  duplicateHttp,
+  type FinishedRequest,
   type NPlusOneOptions,
   nPlusOne,
   resetDetectors,
   runDetectors,
   type SequentialHttpOptions,
+  type SlowBudgetOptions,
   sequentialHttp,
+  slowBudget,
 } from './detectors/index.js';
 export {
   clearDiagnostics,

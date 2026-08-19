@@ -225,6 +225,9 @@ export function createLoupe(init: LoupeInit = {}): Loupe {
         // An unclosed span is no reason to lose the whole request.
       }
       const durationMs = performance.now() - scope.startTime;
+      // What the detectors need to know about the request as a whole; the
+      // scope only knows about spans.
+      const facts = { durationMs, status: outcome.status };
 
       setImmediate(() => {
         // Loupe's own work must not end up as spans of the request being handled.
@@ -238,7 +241,13 @@ export function createLoupe(init: LoupeInit = {}): Loupe {
             // right now — the comparison block in the panel is built from it.
             if (waiter) {
               waiter(
-                buildRecord(scope, outcome, durationMs, runDetectors(scope, options), options),
+                buildRecord(
+                  scope,
+                  outcome,
+                  durationMs,
+                  runDetectors(scope, options, facts),
+                  options,
+                ),
               );
               return;
             }
@@ -249,7 +258,7 @@ export function createLoupe(init: LoupeInit = {}): Loupe {
             // reason to keep the request. Otherwise they run on the requests
             // that survived, which in production is one in a hundred.
             const findingsFirst = options.sampling.alwaysOnFinding;
-            const findings = findingsFirst ? runDetectors(scope, options) : [];
+            const findings = findingsFirst ? runDetectors(scope, options, facts) : [];
 
             const retained = shouldRetain(options.sampling, {
               durationMs,
@@ -264,7 +273,7 @@ export function createLoupe(init: LoupeInit = {}): Loupe {
                 scope,
                 outcome,
                 durationMs,
-                findingsFirst ? findings : runDetectors(scope, options),
+                findingsFirst ? findings : runDetectors(scope, options, facts),
                 options,
               ),
             );

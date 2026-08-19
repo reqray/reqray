@@ -32,6 +32,7 @@ const SCRIPT = [
   () => post('/api/checkout', { orderId: 3, cardNumber: '4111 1111 1111 1111' }),
   () => post('/api/checkout', { orderId: 7, cardNumber: '5500 0000 0000 0004' }),
   () => get('/api/report'),
+  () => get('/api/invoice/1'),
   () => get('/api/boom'),
   () => get('/api/boom'),
 ];

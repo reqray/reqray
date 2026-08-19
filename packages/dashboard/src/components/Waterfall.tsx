@@ -10,6 +10,11 @@ export function badgeFor(detector: string): string {
       return 'N+1';
     case 'sequential_http':
       return 'SEQ HTTP';
+    case 'dup_http':
+    case 'dup_cache':
+      return 'DUP';
+    case 'slow_budget':
+      return 'SLOW';
     default:
       return detector.toUpperCase();
   }
@@ -76,6 +81,11 @@ export function Waterfall({
               {bar.label}
             </span>
             {bar.finding ? <span className="badge-nplus">{badgeFor(bar.finding)}</span> : null}
+            {bar.marks?.map((detector) => (
+              <span key={detector} className="badge-nplus" title="duplicate work">
+                {badgeFor(detector)}
+              </span>
+            ))}
           </span>
           <span className="wf-track">
             <span

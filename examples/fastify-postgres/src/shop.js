@@ -10,6 +10,7 @@
  *   GET  /api/report        deliberately slow: what tail-based sampling retains
  *   POST /api/register      sync password hashing between two queries — the
  *                           uninstrumented stretch in the middle of a waterfall
+ *   GET  /api/invoice/:id   the same external call made twice — duplicate work
  */
 
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
@@ -131,6 +132,31 @@ export async function registerUser(pool, credentials) {
   return { id: rows[0].id, email };
 }
 
+/**
+ * An invoice: the order, then the customer's plan — fetched twice, once for
+ * the header and once for the totals, by two functions neither of which knows
+ * about the other. The classic duplicate: nobody wrote it on purpose.
+ */
+export async function invoice(pool, base, orderId) {
+  const { rows } = await pool.query('SELECT id, total FROM orders WHERE id = $1', [orderId]);
+  const order = rows[0] ?? null;
+
+  const header = await renderHeader(base, orderId);
+  const totals = await renderTotals(base, orderId, order);
+  return { order, header, totals };
+}
+
+async function renderHeader(base, orderId) {
+  const response = await fetch(`${base}/api/external/inventory/${orderId}`);
+  return { stock: await response.json() };
+}
+
+async function renderTotals(base, orderId, order) {
+  // The same call the header already made — and the reason the finding exists.
+  const response = await fetch(`${base}/api/external/inventory/${orderId}`);
+  return { stock: await response.json(), total: order?.total ?? 0 };
+}
+
 /** A deliberately slow report — what tail-based sampling always retains. */
 export async function slowReport(pool) {
   console.log('building the revenue report');
@@ -139,8 +165,9 @@ export async function slowReport(pool) {
      FROM orders o JOIN line_items li ON li.order_id = o.id
      GROUP BY o.user_id`,
   );
-  // The heavy part of a real report is rarely the query itself.
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  // The heavy part of a real report is rarely the query itself. Long enough
+  // to break the 700 ms budget, which is the point of the route.
+  await new Promise((resolve) => setTimeout(resolve, 850));
   console.log('report ready');
   return { rows };
 }
