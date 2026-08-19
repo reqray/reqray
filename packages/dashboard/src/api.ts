@@ -197,6 +197,11 @@ function apiBase(): string {
   return `${path}/api`;
 }
 
+/** An absolute URL for a panel API path — for links the browser must follow. */
+export function apiUrl(path: string): string {
+  return `${apiBase()}${path}`;
+}
+
 async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {
     signal: signal ?? null,

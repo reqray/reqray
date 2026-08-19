@@ -404,6 +404,42 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     }
   });
 
+  it('exports: the collector builds the files, the panel copies the links', async () => {
+    // The files themselves are fetched rather than clicked: a download in
+    // headless Chrome would land on disk and prove less than the content does.
+    const har = (await (await fetch(`${base}/_loupe/api/export/har`)).json()) as {
+      log: { entries: Array<{ request: { method: string }; _loupe: unknown }> };
+    };
+    expect(har.log.entries.length).toBeGreaterThan(3);
+    expect(har.log.entries[0]?._loupe).toMatchObject({ sqlQueries: expect.any(Number) });
+
+    const script = await (await fetch(`${base}/_loupe/api/export/curl`)).text();
+    expect(script).toContain('#!/bin/sh');
+    expect(script).toContain('curl -i -X GET');
+
+    // The menu itself, and the toast it raises.
+    await page.evaluate(() => {
+      const buttons = [...document.querySelectorAll('.export button')];
+      (buttons[0] as HTMLButtonElement)?.click();
+    });
+    await page.waitForSelector('.export-menu', { visible: true });
+    const items = await page.$$eval('.export-item', (nodes) =>
+      nodes.map((node) => node.textContent ?? ''),
+    );
+    expect(items).toHaveLength(4);
+    expect(items.some((item) => item.includes('Deep link'))).toBe(true);
+
+    await page.evaluate(() => {
+      const items = [...document.querySelectorAll('.export-item')];
+      (items.find((node) => node.textContent?.includes('Deep link')) as HTMLButtonElement)?.click();
+    });
+    await page.waitForSelector('.toast', { visible: true });
+    expect(await page.$eval('.toast', (node) => node.textContent ?? '')).toContain('Deep link');
+    await page.waitForFunction(() => document.querySelector('.toast') === null, {
+      timeout: 6_000,
+    });
+  });
+
   it('switches the waterfall for a flamegraph and back', async () => {
     const list = (await (await fetch(`${base}/_loupe/api/requests`)).json()) as {
       requests: Array<{ id: string; path: string }>;

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchMeta, type PanelMeta } from './api';
+import { ExportMenu } from './components/ExportMenu';
 import { KeyboardPanel } from './components/KeyboardPanel';
+import { Toast } from './components/Toast';
 import { isTypingTarget } from './keyboard';
 import { hashFor, parseHash, type Route, type Screen } from './routing';
 import { CompareScreen } from './screens/CompareScreen';
@@ -21,6 +23,7 @@ export function App() {
   const [live, setLive] = useState(true);
   const [meta, setMeta] = useState<PanelMeta | null>(null);
   const [keysOpen, setKeysOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   /** Requests staged for comparison, oldest pick first; at most two. */
   const [picked, setPicked] = useState<string[]>([]);
 
@@ -160,6 +163,8 @@ export function App() {
           {live ? 'live' : 'paused'}
         </button>
 
+        <ExportMenu selected={selected} onToast={setToast} />
+
         <div className="segmented">
           <button type="button" aria-pressed={theme === 'dark'} onClick={() => setTheme('dark')}>
             dark
@@ -232,6 +237,7 @@ export function App() {
         )}
 
         {keysOpen ? <KeyboardPanel onClose={() => setKeysOpen(false)} /> : null}
+        {toast ? <Toast message={toast} onDone={() => setToast(null)} /> : null}
       </main>
     </div>
   );

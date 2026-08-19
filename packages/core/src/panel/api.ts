@@ -17,6 +17,7 @@ import { groupExceptions } from './exceptions.js';
 import { ExplainError, runExplain } from './explain.js';
 import { filterRequests, type RequestFilter, summarize } from './filters.js';
 import { type ReplayInput, runReplay } from './replay.js';
+import { toCurlScript, toHar } from './export.js';
 import { normalizeRoute, routeStats } from './routes.js';
 
 /** Where the panel gets its data. Implemented by the transport store. */
@@ -121,6 +122,22 @@ export function toRow(request: RecordedRequest, pinned = false): RequestRow {
     pinned,
     test: request.test,
   };
+}
+
+/** A file the browser saves rather than renders. */
+function sendDownload(
+  response: ServerResponse,
+  filename: string,
+  contentType: string,
+  body: string,
+): void {
+  response.writeHead(200, {
+    'content-type': contentType,
+    'content-disposition': `attachment; filename="${filename}"`,
+    'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(body),
+  });
+  response.end(body);
 }
 
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
@@ -318,6 +335,28 @@ export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null 
         requests: shown.map((record) => toRow(record, pinned.has(record.id))),
         summary: summarize(all, shown, options.sampling.slowMs || 500),
       });
+      return true;
+    }
+
+    if (route === '/api/export/har' && method === 'GET') {
+      const shown = filterRequests(source.list(), parseFilter(url.searchParams));
+      sendDownload(
+        response,
+        'loupe.har',
+        'application/json; charset=utf-8',
+        JSON.stringify(toHar(shown, new Date()), null, 2),
+      );
+      return true;
+    }
+
+    if (route === '/api/export/curl' && method === 'GET') {
+      const shown = filterRequests(source.list(), parseFilter(url.searchParams));
+      sendDownload(
+        response,
+        'loupe-requests.sh',
+        'text/x-shellscript; charset=utf-8',
+        toCurlScript(shown, originOf(request)),
+      );
       return true;
     }
 
