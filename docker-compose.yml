@@ -1,0 +1,36 @@
+# Demo application with a real Postgres.
+#
+#   docker compose up --build
+#   open http://localhost:3000/api/orders   — the route with a deliberate N+1
+#   open http://localhost:3000/_loupe/      — the panel
+#
+# Postgres runs in its own container rather than embedded in the process. That
+# is the shape a real deployment has, and the shape overhead is measured in.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # No mount at all. The demo drops and recreates its tables on every start,
+    # so nothing is worth keeping, and the data directory layout changed in
+    # Postgres 18 — a mount at the old path makes the image refuse to boot.
+
+  demo:
+    build:
+      context: .
+    ports:
+      - '3000:3000'
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3000'
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+    depends_on:
+      postgres:
+        condition: service_healthy

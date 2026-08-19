@@ -1,0 +1,29 @@
+{
+  "name": "loupe",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dev panel and request inspector for Node.js backends",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.18.0",
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/**\" build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "bench": "pnpm --filter @loupe/bench start",
+    "changeset": "changeset",
+    "release": "pnpm build && changeset publish"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.9",
+    "@changesets/cli": "^3.0.0",
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "catalog:",
+    "vitest": "^4.1.10"
+  }
+}

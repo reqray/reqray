@@ -1,0 +1,12 @@
+# Everything is built inside the image; anything from the host would only
+# collide with it.
+node_modules
+**/node_modules
+dist
+**/dist
+.git
+.github
+coverage
+docs/screenshots
+*.log
+.DS_Store

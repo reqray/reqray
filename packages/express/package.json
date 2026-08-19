@@ -1,0 +1,50 @@
+{
+  "name": "@loupe/express",
+  "version": "0.0.0",
+  "description": "\u0410\u0434\u0430\u043f\u0442\u0435\u0440 Express \u0434\u043b\u044f Loupe.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@loupe/core": "workspace:^",
+    "@loupe/transport-memory": "workspace:^",
+    "@loupe/dashboard": "workspace:^"
+  },
+  "peerDependencies": {
+    "express": "^4 || ^5"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "@types/express": "^5.0.6",
+    "express": "^5.2.1"
+  }
+}

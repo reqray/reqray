@@ -1,0 +1,50 @@
+/*
+ * Design tokens.
+ *
+ * The oklch values are authoritative. Dark is the default theme, light is
+ * opt-in via `data-theme="light"` on the root element, so no component ever
+ * branches on the theme — it only reads variables.
+ */
+
+:root {
+  --bg: oklch(0.205 0.006 250);
+  --bg2: oklch(0.235 0.006 250);
+  --bg3: oklch(0.275 0.007 250);
+  --sel: oklch(0.315 0.024 245);
+  --selh: oklch(0.345 0.026 245);
+  --fg: oklch(0.93 0.004 250);
+  --fg2: oklch(0.72 0.006 250);
+  --fg3: oklch(0.56 0.006 250);
+  --line: oklch(0.315 0.006 250);
+  --line2: oklch(0.265 0.006 250);
+  --acc: oklch(0.72 0.11 232);
+  --ok: oklch(0.72 0.09 150);
+  --warn: oklch(0.78 0.09 82);
+  --err: oklch(0.68 0.12 25);
+
+  --row: 40px;
+
+  /* Motion: fast is hover feedback, slow is entrances and the drawer. */
+  --t-fast: 90ms;
+  --t-slow: 180ms;
+
+  --ui: "Archivo", system-ui, -apple-system, "Segoe UI", roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, sfmono-regular, "SF Mono", menlo, consolas, monospace;
+}
+
+:root[data-theme="light"] {
+  --bg: oklch(0.985 0.002 250);
+  --bg2: oklch(0.955 0.003 250);
+  --bg3: oklch(0.925 0.004 250);
+  --sel: oklch(0.905 0.028 245);
+  --selh: oklch(0.875 0.03 245);
+  --fg: oklch(0.26 0.006 250);
+  --fg2: oklch(0.46 0.006 250);
+  --fg3: oklch(0.62 0.006 250);
+  --line: oklch(0.87 0.004 250);
+  --line2: oklch(0.925 0.004 250);
+  --acc: oklch(0.52 0.13 232);
+  --ok: oklch(0.52 0.09 150);
+  --warn: oklch(0.56 0.1 70);
+  --err: oklch(0.53 0.15 25);
+}

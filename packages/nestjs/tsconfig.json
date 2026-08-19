@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Nest is built on decorators. Metadata emission is deliberately NOT
+    // enabled: esbuild cannot emit it, so every injection in this package is
+    // an explicit @Inject(token).
+    "experimentalDecorators": true
+  },
+  "include": ["src", "test", "tsup.config.ts"]
+}

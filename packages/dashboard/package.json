@@ -1,0 +1,35 @@
+{
+  "name": "@loupe/dashboard",
+  "version": "0.0.0",
+  "description": "Loupe dashboard: React SPA, built as static files and served by the adapter.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    "./dist/*": "./dist/*"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.5",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "typescript": "catalog:",
+    "vite": "^8.2.1"
+  }
+}

@@ -1,0 +1,62 @@
+# The staging shape: the application only collects and ships batches, the
+# collector stores them and serves the panel. This is how Loupe is meant to
+# run anywhere the process is reachable from outside.
+#
+#   docker compose -f docker-compose.staging.yml up --build
+#   open http://localhost:3000/api/orders                  — the N+1 route
+#   open http://localhost:4300/auth?token=staging-secret   — the panel, on the collector
+#
+# The token is a fixed demo value. On a real staging it comes from a secret.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  collector:
+    build:
+      context: .
+    working_dir: /app
+    command: ['node', 'packages/server/dist/cli.js']
+    environment:
+      HOST: 0.0.0.0
+      PORT: '4300'
+      LOUPE_TOKEN: staging-secret
+    ports:
+      - '4300:4300'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:4300/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  demo:
+    build:
+      context: .
+    ports:
+      - '3000:3000'
+    environment:
+      HOST: 0.0.0.0
+      PORT: '3000'
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      LOUPE_MODE: staging
+      LOUPE_SERVER_URL: http://collector:4300
+      LOUPE_TOKEN: staging-secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      collector:
+        condition: service_healthy

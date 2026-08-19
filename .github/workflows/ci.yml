@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Build before tests: the loader-hook e2e tests run `node --import`
+      # against the built file, not the sources.
+      - name: Build
+        run: pnpm build
+
+      # Chrome is preinstalled on GitHub runners; the UI tests use it through
+      # puppeteer-core and skip loudly where it is missing.
+      - name: Tests
+        run: pnpm test
+
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # The benchmark starts its own Postgres in a separate process; an
+      # in-process engine would share the event loop and the numbers would be
+      # about contention rather than overhead.
+      - name: Overhead benchmark
+        run: pnpm bench | tee bench-results.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench-results.txt

@@ -1,0 +1,34 @@
+packages:
+  - packages/*
+  - examples/*
+  - bench
+
+allowBuilds:
+  # Unpacks the Postgres binaries the benchmark runs against.
+  '@embedded-postgres/darwin-arm64': true
+  '@embedded-postgres/darwin-x64': true
+  '@embedded-postgres/linux-arm64': true
+  '@embedded-postgres/linux-x64': true
+  esbuild: true
+  # testcontainers transitive deps: native accelerators and a code generator
+  # that are not used here.
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
+
+catalog:
+  "@types/node": ^26.2.0
+  tsup: ^8.5.1
+  typescript: ^6.0.3
+
+minimumReleaseAgeExclude:
+  - '@biomejs/biome@2.5.9'
+  - '@biomejs/cli-darwin-arm64@2.5.9'
+  - '@biomejs/cli-darwin-x64@2.5.9'
+  - '@biomejs/cli-linux-arm64-musl@2.5.9'
+  - '@biomejs/cli-linux-arm64@2.5.9'
+  - '@biomejs/cli-linux-x64-musl@2.5.9'
+  - '@biomejs/cli-linux-x64@2.5.9'
+  - '@biomejs/cli-win32-arm64@2.5.9'
+  - '@biomejs/cli-win32-x64@2.5.9'
+  - '@types/pg@8.23.1'

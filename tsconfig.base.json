@@ -1,0 +1,49 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+
+    // tsup injects `baseUrl` into its dts build, which TypeScript 6 deprecated.
+    // Drop this together with the move to TypeScript 7 — that move also needs a
+    // tsup version whose dts build works without `baseUrl`.
+    "ignoreDeprecations": "6.0",
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    // Packages resolve to sources so typecheck and tests need no prior build.
+    // The same list is duplicated in vitest.config.ts — update both.
+    "paths": {
+      "@loupe/core": ["./packages/core/src/index.ts"],
+      "@loupe/register": ["./packages/register/src/index.ts"],
+      "@loupe/express": ["./packages/express/src/index.ts"],
+      "@loupe/fastify": ["./packages/fastify/src/index.ts"],
+      "@loupe/transport-memory": ["./packages/transport-memory/src/index.ts"],
+      "@loupe/transport-http": ["./packages/transport-http/src/index.ts"],
+      "@loupe/server": ["./packages/server/src/index.ts"],
+      "@loupe/nestjs": ["./packages/nestjs/src/index.ts"],
+      "@loupe/instrumentation-pg": ["./packages/instrumentation-pg/src/index.ts"],
+      "@loupe/instrumentation-prisma": ["./packages/instrumentation-prisma/src/index.ts"],
+      "@loupe/instrumentation-undici": ["./packages/instrumentation-undici/src/index.ts"]
+    }
+  }
+}

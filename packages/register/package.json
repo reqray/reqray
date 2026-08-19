@@ -1,0 +1,52 @@
+{
+  "name": "@loupe/register",
+  "version": "0.0.0",
+  "description": "Loader hooks (CJS + ESM) for automatic Loupe instrumentation.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@loupe/core": "workspace:^",
+    "@loupe/instrumentation-pg": "workspace:^",
+    "@loupe/transport-memory": "workspace:^",
+    "@loupe/dashboard": "workspace:^",
+    "@loupe/instrumentation-undici": "workspace:^",
+    "import-in-the-middle": "^3.3.3",
+    "require-in-the-middle": "^8.0.1",
+    "semver": "^7.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "@types/semver": "^7.8.0",
+    "pg": "^8.23.0"
+  }
+}

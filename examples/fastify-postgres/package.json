@@ -1,0 +1,29 @@
+{
+  "name": "@loupe/example-fastify-postgres",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Fastify + Postgres demo application with a deliberate N+1.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node --import @loupe/register src/index.js",
+    "traffic": "node scripts/traffic.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@loupe/fastify": "workspace:^",
+    "@loupe/transport-http": "workspace:^",
+    "@loupe/register": "workspace:^",
+    "fastify": "^5.12.0",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.5",
+    "@electric-sql/pglite-socket": "^0.2.8",
+    "typescript": "catalog:",
+    "@types/node": "catalog:",
+    "puppeteer-core": "^25.8.0"
+  }
+}

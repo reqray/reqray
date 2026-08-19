@@ -1,0 +1,264 @@
+/* Request list, empty state and the status bar. */
+
+.requests {
+  display: grid;
+  grid-template-rows: 44px 32px 1fr 30px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px;
+  overflow-x: auto;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  width: 330px;
+  height: 30px;
+  padding: 0 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.search-hint {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg3);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  outline: none;
+}
+
+/* Shared by the column header and every row, so they cannot drift apart. */
+.row-grid {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) 52px 40px 96px 60px 112px;
+  gap: 10px;
+  padding: 0 10px 0 8px;
+  align-items: center;
+}
+
+.row-head {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+/* Header cells are buttons now; strip the chrome so they still read as labels. */
+.row-head .sort-head {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--t-fast) ease-out;
+}
+
+.row-head .sort-head.cell-right {
+  text-align: right;
+}
+
+.row-head .sort-head:hover,
+.row-head .sort-head[aria-pressed="true"] {
+  color: var(--fg);
+}
+
+.sort-dir {
+  margin-left: 3px;
+  font-size: 10px;
+}
+
+.rows {
+  overflow-y: auto;
+}
+
+.row {
+  height: var(--row);
+  /* Fainter than --line on purpose: the table must read as a log, not as
+     a stack of cards. */
+  border-bottom: 1px solid var(--line2);
+  font-family: var(--mono);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  background: transparent;
+  color: inherit;
+  transition: background-color var(--t-fast) ease-out;
+}
+
+/* The only severity marker that stays visible while scanning. */
+.row[data-tick="acc"] {
+  box-shadow: inset 2px 0 0 0 var(--acc);
+}
+.row[data-tick="err"] {
+  box-shadow: inset 2px 0 0 0 var(--err);
+}
+.row[data-tick="warn"] {
+  box-shadow: inset 2px 0 0 0 var(--warn);
+}
+
+.row:hover {
+  background: var(--bg3);
+}
+
+.row[data-selected="true"] {
+  background: var(--sel);
+}
+
+.row[data-selected="true"]:hover {
+  background: var(--selh);
+}
+
+.row[data-fresh="true"] {
+  animation: flash 1.4s ease-out;
+}
+
+@keyframes flash {
+  from {
+    background: oklch(0.72 0.11 232 / 0.28);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.cell-method {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cell-right {
+  text-align: right;
+}
+
+.cell-center {
+  text-align: center;
+}
+
+.flag {
+  display: inline-block;
+  padding: 1px 3px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 10px;
+  background: var(--bg2);
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg3);
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+
+.empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 24px;
+}
+
+.empty-card {
+  width: 600px;
+  max-width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.empty-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg2);
+}
+
+.empty-body {
+  padding: 18px 14px 16px;
+}
+
+.empty-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.empty-text {
+  margin: 8px 0 0;
+  max-width: 44ch;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--fg2);
+}
+
+.empty-label {
+  margin-top: 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--fg3);
+}
+
+/* Inset, not raised: darker than the card it sits in. */
+.snippet {
+  margin-top: 8px;
+  padding: 9px 11px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.empty-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg3);
+}

@@ -1,0 +1,56 @@
+{
+  "name": "@loupe/instrumentation-pg",
+  "version": "0.0.0",
+  "description": "pg driver instrumentation for Loupe.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@loupe/core": "workspace:^"
+  },
+  "peerDependencies": {
+    "pg": ">=8 <9"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "@testcontainers/postgresql": "^12.1.0",
+    "pg": "^8.23.0",
+    "@types/pg": "^8.23.1",
+    "@electric-sql/pglite": "^0.5.5",
+    "@electric-sql/pglite-socket": "^0.2.8"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@loupe/bench",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Loupe overhead benchmark: latency, memory, event loop lag.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "autocannon": "^8.0.0"
+  },
+  "devDependencies": {
+    "embedded-postgres": "^18.4.0-beta.17"
+  }
+}

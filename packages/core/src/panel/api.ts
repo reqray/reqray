@@ -1,0 +1,428 @@
+/**
+ * Panel HTTP API.
+ *
+ * The handler is written against raw `IncomingMessage`/`ServerResponse`, so
+ * Express and Fastify mount the very same code — no need to duplicate the API
+ * in each adapter.
+ */
+
+import { createReadStream, statSync } from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { extname, resolve, sep } from 'node:path';
+import type { ResolvedOptions } from '../config.js';
+import { warnOnce } from '../logger.js';
+import { isPanelRequestAllowed } from '../panel.js';
+import type { RecordedRequest } from '../types.js';
+import { groupExceptions } from './exceptions.js';
+import { ExplainError, runExplain } from './explain.js';
+import { filterRequests, type RequestFilter, summarize } from './filters.js';
+import { type ReplayInput, runReplay } from './replay.js';
+
+/** Where the panel gets its data. Implemented by the transport store. */
+export interface PanelSource {
+  /** Requests from newest to oldest. */
+  list(): readonly RecordedRequest[];
+  get(id: string): RecordedRequest | undefined;
+  clear(): void;
+  subscribe(listener: (request: RecordedRequest) => void): () => void;
+}
+
+/** Everything the panel handler needs to serve a request. */
+export interface PanelHandlerInit {
+  readonly source: PanelSource;
+  readonly options: ResolvedOptions;
+  /**
+   * Directory with the built dashboard.
+   *
+   * Left out when `@loupe/dashboard` is not installed: the API keeps working
+   * and the UI route answers with an explanation instead of a blank page.
+   */
+  readonly assetsDir?: string | undefined;
+}
+
+/**
+ * Panel request handler.
+ *
+ * @returns `true` if the request belonged to the panel and has been handled.
+ * `false` means it is an ordinary application request and must be passed on.
+ */
+export type PanelHandler = (request: IncomingMessage, response: ServerResponse) => boolean;
+
+/** A list row — exactly what the request table shows. */
+export interface RequestRow {
+  readonly id: string;
+  readonly method: string;
+  readonly path: string;
+  readonly query: string | null;
+  readonly status: number;
+  readonly durationMs: number;
+  readonly startedAt: number;
+  readonly sqlCount: number;
+  readonly nPlusOne: boolean;
+  /** How many findings the detectors produced. */
+  readonly findingCount: number;
+  readonly hasError: boolean;
+}
+
+/**
+ * Projects a record into a list row.
+ *
+ * The whole list is served on every panel open, and full records with spans
+ * and bodies would weigh megabytes. Details come from a separate request by
+ * identifier.
+ */
+export function toRow(request: RecordedRequest): RequestRow {
+  let sqlCount = 0;
+  for (const span of request.spans) {
+    if (span.kind === 'db') sqlCount++;
+  }
+
+  return {
+    id: request.id,
+    method: request.method,
+    path: request.path,
+    query: request.query,
+    status: request.status,
+    durationMs: request.durationMs,
+    startedAt: request.startedAt,
+    sqlCount,
+    nPlusOne: request.findings.some((finding) => finding.detector === 'n_plus_one'),
+    findingCount: request.findings.length,
+    hasError: request.error !== null || request.status >= 500,
+  };
+}
+
+function sendJson(response: ServerResponse, status: number, payload: unknown): void {
+  const body = JSON.stringify(payload);
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(body),
+  });
+  response.end(body);
+}
+
+function parseFilter(params: URLSearchParams): RequestFilter {
+  const methods = params
+    .getAll('method')
+    .flatMap((value) => value.split(','))
+    .filter(Boolean);
+  const statusClasses = params
+    .getAll('status')
+    .flatMap((value) => value.split(','))
+    .map((value) => Number.parseInt(value, 10))
+    .filter((value) => Number.isFinite(value));
+
+  const minDuration = Number(params.get('minDurationMs'));
+
+  return {
+    query: params.get('q') ?? undefined,
+    methods,
+    statusClasses,
+    minDurationMs: Number.isFinite(minDuration) && minDuration > 0 ? minDuration : undefined,
+    onlyFindings: params.get('findings') === '1',
+  };
+}
+
+/**
+ * Reads the body of a panel request.
+ *
+ * An already-parsed body is taken first: the application almost certainly has
+ * a json parser (`express.json()`) that consumed the stream before us —
+ * reading the socket a second time is pointless, it is already empty.
+ */
+async function readBody(request: IncomingMessage, limitBytes = 1_000_000): Promise<unknown> {
+  const parsed = (request as IncomingMessage & { body?: unknown }).body;
+  if (parsed !== undefined && parsed !== null) {
+    return typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
+  }
+
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = chunk as Buffer;
+    size += buffer.length;
+    if (size > limitBytes) throw new Error('request body too large');
+    chunks.push(buffer);
+  }
+  const raw = Buffer.concat(chunks).toString('utf8');
+  return raw ? JSON.parse(raw) : {};
+}
+
+const MIME_TYPES: Readonly<Record<string, string>> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.woff2': 'font/woff2',
+  '.ico': 'image/x-icon',
+};
+
+/**
+ * Serves the built dashboard.
+ *
+ * Anything that is not an existing file falls back to `index.html`: the panel
+ * is a single-page app, and its inner screens are state, not server routes.
+ */
+function serveAsset(assetsDir: string, route: string, response: ServerResponse): boolean {
+  const root = resolve(assetsDir);
+  const requested = route === '/' ? 'index.html' : route.replace(/^\/+/, '');
+  let target = resolve(root, requested);
+
+  // A path escaping the assets directory can only come from a traversal attempt.
+  if (target !== root && !target.startsWith(root + sep)) return false;
+
+  let file = statSync(target, { throwIfNoEntry: false });
+  if (!file?.isFile()) {
+    target = resolve(root, 'index.html');
+    file = statSync(target, { throwIfNoEntry: false });
+    if (!file?.isFile()) return false;
+  }
+
+  response.writeHead(200, {
+    'content-type': MIME_TYPES[extname(target)] ?? 'application/octet-stream',
+    'content-length': file.size,
+    // Asset names are content-hashed by the build; index.html must not be cached.
+    'cache-control': target.endsWith('index.html') ? 'no-store' : 'public, max-age=31536000',
+  });
+  createReadStream(target).pipe(response);
+  return true;
+}
+
+/** The application's own address — replay needs it to call back into itself. */
+function originOf(request: IncomingMessage): string {
+  const host = request.headers.host ?? `127.0.0.1:${request.socket.localPort ?? 80}`;
+  // TLS never reaches this far: the panel is mounted inside the application,
+  // and replay always goes to its own local address.
+  return `http://${host}`;
+}
+
+function streamEvents(
+  source: PanelSource,
+  request: IncomingMessage,
+  response: ServerResponse,
+): void {
+  response.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    connection: 'keep-alive',
+    // Disables nginx buffering: without it the feed stalls.
+    'x-accel-buffering': 'no',
+  });
+  response.write(': loupe stream\n\n');
+
+  const unsubscribe = source.subscribe((recorded) => {
+    response.write(`data: ${JSON.stringify(toRow(recorded))}\n\n`);
+  });
+
+  const keepAlive = setInterval(() => response.write(': ping\n\n'), 20_000);
+  keepAlive.unref?.();
+
+  const stop = (): void => {
+    clearInterval(keepAlive);
+    unsubscribe();
+  };
+  request.on('close', stop);
+  response.on('close', stop);
+}
+
+/**
+ * Creates the panel handler.
+ *
+ * Returns `null` if the panel is disabled by options: the adapter then has
+ * nothing to mount.
+ */
+export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null {
+  const { source, options } = init;
+  const panel = options.panel;
+  if (!panel || !options.enabled) return null;
+
+  const mount = panel.path.endsWith('/') ? panel.path.slice(0, -1) : panel.path;
+
+  return function handlePanelRequest(request, response): boolean {
+    // Express strips the matched mount prefix from `url` inside `app.use`;
+    // `originalUrl` keeps the full path. Anything non-Express has no such
+    // property and falls back to the plain url.
+    const rawUrl = (request as { originalUrl?: string }).originalUrl ?? request.url ?? '/';
+    if (rawUrl !== mount && !rawUrl.startsWith(`${mount}/`) && !rawUrl.startsWith(`${mount}?`)) {
+      return false;
+    }
+
+    const url = new URL(rawUrl, 'http://loupe.local');
+    const route = url.pathname.slice(mount.length) || '/';
+
+    if (
+      !isPanelRequestAllowed(panel.gate, {
+        headers: request.headers,
+        ip: request.socket.remoteAddress ?? null,
+      })
+    ) {
+      sendJson(response, 403, { error: 'panel access denied by the gate' });
+      return true;
+    }
+
+    const method = request.method ?? 'GET';
+
+    if (route === '/api/meta' && method === 'GET') {
+      sendJson(response, 200, {
+        pid: process.pid,
+        startedAt: Date.now() - Math.round(process.uptime() * 1000),
+        mode: options.mode,
+        bufferSize: options.bufferSize,
+        replayEnabled: options.replay,
+      });
+      return true;
+    }
+
+    if (route === '/api/requests' && method === 'GET') {
+      const all = source.list();
+      const shown = filterRequests(all, parseFilter(url.searchParams));
+      sendJson(response, 200, {
+        requests: shown.map(toRow),
+        summary: summarize(all, shown, options.sampling.slowMs || 500),
+      });
+      return true;
+    }
+
+    if (route === '/api/requests' && method === 'DELETE') {
+      source.clear();
+      sendJson(response, 200, { cleared: true });
+      return true;
+    }
+
+    if (route.startsWith('/api/requests/') && method === 'GET') {
+      const id = decodeURIComponent(route.slice('/api/requests/'.length));
+      const found = source.get(id);
+      if (!found) {
+        sendJson(response, 404, {
+          error: 'request not found — possibly evicted from the ring buffer',
+        });
+        return true;
+      }
+      sendJson(response, 200, found);
+      return true;
+    }
+
+    if (route === '/api/exceptions' && method === 'GET') {
+      sendJson(response, 200, { groups: groupExceptions(source.list(), options.stack) });
+      return true;
+    }
+
+    if (route === '/api/stream' && method === 'GET') {
+      streamEvents(source, request, response);
+      return true;
+    }
+
+    if (route === '/api/explain' && method === 'POST') {
+      if (!options.explain) {
+        sendJson(response, 403, {
+          error:
+            'EXPLAIN from the panel is off. Outside local development it is enabled explicitly: loupe({ explain: true }).',
+        });
+        return true;
+      }
+      handleExplain(source, request, response);
+      return true;
+    }
+
+    if (route === '/api/replay' && method === 'POST') {
+      if (!options.replay) {
+        sendJson(response, 403, {
+          error:
+            'replay is off. Outside local development it is enabled only explicitly: loupe({ replay: true }) — a replay in production means a second charge and a second email.',
+        });
+        return true;
+      }
+      handleReplay(source, request, response);
+      return true;
+    }
+
+    if (route.startsWith('/api/')) {
+      sendJson(response, 404, { error: 'no such panel endpoint' });
+      return true;
+    }
+
+    if (method === 'GET' && init.assetsDir && serveAsset(init.assetsDir, route, response)) {
+      return true;
+    }
+
+    sendJson(response, 404, {
+      error: init.assetsDir
+        ? 'panel asset not found'
+        : 'the panel UI is not installed: add @loupe/dashboard. The API keeps working.',
+    });
+    return true;
+  };
+}
+
+function handleExplain(
+  source: PanelSource,
+  request: IncomingMessage,
+  response: ServerResponse,
+): void {
+  void (async () => {
+    try {
+      const payload = (await readBody(request)) as { id?: unknown; spanId?: unknown };
+      const record = typeof payload.id === 'string' ? source.get(payload.id) : undefined;
+      if (!record) {
+        sendJson(response, 404, {
+          error: 'request not found — possibly evicted from the ring buffer',
+        });
+        return;
+      }
+      const spanId = typeof payload.spanId === 'number' ? payload.spanId : Number.NaN;
+
+      sendJson(response, 200, await runExplain(record, spanId));
+    } catch (error) {
+      if (error instanceof ExplainError) {
+        sendJson(response, error.status, { error: error.message });
+        return;
+      }
+      const reason = error instanceof Error ? error.message : String(error);
+      warnOnce('panel.explain', `EXPLAIN failed: ${reason}`);
+      sendJson(response, 500, { error: `EXPLAIN failed: ${reason}` });
+    }
+  })();
+}
+
+function handleReplay(
+  source: PanelSource,
+  request: IncomingMessage,
+  response: ServerResponse,
+): void {
+  void (async () => {
+    try {
+      const payload = (await readBody(request)) as {
+        id?: unknown;
+        method?: unknown;
+        path?: unknown;
+        headers?: unknown;
+        body?: unknown;
+      };
+
+      const original = typeof payload.id === 'string' ? source.get(payload.id) : undefined;
+      if (!original) {
+        sendJson(response, 404, { error: 'original request not found' });
+        return;
+      }
+
+      const input: ReplayInput = {
+        method: typeof payload.method === 'string' ? payload.method : original.method,
+        path: typeof payload.path === 'string' ? payload.path : original.path,
+        headers:
+          payload.headers && typeof payload.headers === 'object'
+            ? (payload.headers as Record<string, string>)
+            : {},
+        body: typeof payload.body === 'string' ? payload.body : undefined,
+      };
+
+      sendJson(response, 200, await runReplay(originOf(request), input, original));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      warnOnce('panel.replay', `replay failed: ${reason}`);
+      sendJson(response, 500, { error: `replay failed: ${reason}` });
+    }
+  })();
+}

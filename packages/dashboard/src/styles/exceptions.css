@@ -1,0 +1,128 @@
+/* Exception groups and their stack traces. */
+
+.exceptions {
+  display: grid;
+  grid-template-rows: 44px 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+.exceptions-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg3);
+}
+
+.exceptions-body {
+  overflow-y: auto;
+}
+
+.exc-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 84px 96px 124px;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  /* Full-weight border: groups are cards made by separation. */
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-fast) ease-out;
+}
+
+.exc-row:hover {
+  background: var(--bg3);
+}
+
+.exc-title {
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+.exc-origin {
+  margin-top: 2px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg3);
+}
+
+.exc-count {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--fg2);
+  font-variant-numeric: tabular-nums;
+}
+
+.exc-seen {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg3);
+}
+
+.sparkline {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 20px;
+}
+
+.spark-bar {
+  width: 4px;
+  background: var(--line);
+}
+
+.spark-bar[data-recent="true"] {
+  background: var(--err);
+}
+
+.exc-open {
+  padding: 2px 12px 14px 28px;
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.frames {
+  margin-top: 6px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+}
+
+.frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 4px 10px;
+  border-top: 1px solid var(--line2);
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg3);
+}
+
+.frame[data-project="true"] {
+  color: var(--fg);
+  background: var(--bg);
+  box-shadow: inset 2px 0 0 0 var(--acc);
+}
+
+.frame-tag {
+  color: var(--fg3);
+}
+
+.exc-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
