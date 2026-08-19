@@ -167,9 +167,22 @@
   gap: 8px;
   min-width: 0;
   padding: 0 10px;
-  overflow-x: auto;
   background: var(--bg2);
   border-bottom: 1px solid var(--line);
+}
+
+/* The chips scroll when they run out of room; the search field, the rules
+   pill and `clear` stay reachable outside that region — and the popover has
+   somewhere to hang, which an overflow container would have clipped. */
+.filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  /* Room for the chips' focus ring inside the scroller. */
+  padding: 4px 0;
 }
 
 .search {
@@ -276,6 +289,27 @@
   transition: background-color var(--t-fast) ease-out;
 }
 
+/* ── Highlight rule tints ────────────────────────────────────────────── */
+
+/* Deliberately faint: a tint is a nudge for the eye scanning the list, not a
+   second status column. Hover and selection are declared after these, so they
+   always win. */
+.row[data-rule="slow_external"] {
+  background: oklch(0.68 0.12 25 / 0.14);
+}
+.row[data-rule="server_error"] {
+  background: oklch(0.68 0.12 25 / 0.1);
+}
+.row[data-rule="n_plus_one"] {
+  background: oklch(0.78 0.09 82 / 0.12);
+}
+.row[data-rule="chatty_sql"] {
+  background: oklch(0.78 0.09 82 / 0.08);
+}
+.row[data-rule="from_test"] {
+  background: oklch(0.72 0.11 232 / 0.1);
+}
+
 /* The only severity marker that stays visible while scanning. */
 .row[data-tick="acc"] {
   box-shadow: inset 2px 0 0 0 var(--acc);
@@ -333,6 +367,72 @@
   font-size: 11px;
   letter-spacing: 0.04em;
   line-height: 1.2;
+}
+
+/* ── Highlight rules popover ─────────────────────────────────────────── */
+
+.rules {
+  position: relative;
+  flex: none;
+}
+
+.rules-pop {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 4;
+  width: 320px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.rules-head {
+  padding: 8px 10px 6px;
+}
+
+.rules-row {
+  display: grid;
+  grid-template-columns: 14px 10px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-fast) ease-out;
+}
+
+.rules-row:hover {
+  background: var(--bg3);
+}
+
+.rules-swatch {
+  width: 10px;
+  height: 10px;
+}
+
+.rules-swatch[data-tone="err"] {
+  background: var(--err);
+}
+.rules-swatch[data-tone="warn"] {
+  background: var(--warn);
+}
+.rules-swatch[data-tone="acc"] {
+  background: var(--acc);
+}
+
+.rules-foot {
+  padding: 6px 10px 9px;
+  border-top: 1px solid var(--line2);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg3);
 }
 
 .statusbar {

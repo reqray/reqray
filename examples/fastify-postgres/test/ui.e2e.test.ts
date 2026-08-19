@@ -368,6 +368,31 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     }
   });
 
+  it('highlight rules tint rows, and switching one off untints them', async () => {
+    // /api/boom is a 500, which the "status ≥ 500" rule owns by default.
+    await page.waitForSelector('.row[data-rule="server_error"]');
+
+    await (await page.$('.rules .chip'))?.click();
+    // `visible` matters: the popover once rendered inside an overflow
+    // container, present in the DOM and clipped out of sight.
+    await page.waitForSelector('.rules-pop', { visible: true });
+    expect(await page.$eval('.rules-pop', (node) => node.textContent ?? '')).toContain(
+      'first matching rule tints the row',
+    );
+
+    const rows = await page.$$('.rules-row');
+    // Second rule in evaluation order: `status ≥ 500`.
+    await rows[1]?.click();
+    await page.waitForFunction(
+      () => document.querySelector('.row[data-rule="server_error"]') === null,
+    );
+
+    await rows[1]?.click();
+    await page.waitForSelector('.row[data-rule="server_error"]');
+    await (await page.$('.rules .chip'))?.click();
+    await page.waitForFunction(() => document.querySelector('.rules-pop') === null);
+  });
+
   it('marks requests a test issued, and filters down to them', async () => {
     const name = 'orders.spec.ts:42 › creates an order';
     const before = await page.$$eval('.row', (nodes) => nodes.length);

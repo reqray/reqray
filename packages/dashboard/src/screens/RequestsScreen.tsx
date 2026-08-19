@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RequestRow } from '../api';
+import { RulesPopover } from '../components/RulesPopover';
 import { TimelineScrubber } from '../components/TimelineScrubber';
 import {
   clock,
@@ -11,6 +12,7 @@ import {
   statusTone,
 } from '../format';
 import { isTypingTarget, nextIndex, scrollTopFor } from '../keyboard';
+import { loadRules, type RuleId, saveRules, tintOf } from '../rules';
 import { nextSort, type SortKey } from '../sort';
 import type { DurationFilter, FilterState, RequestsState } from '../useRequests';
 
@@ -65,6 +67,7 @@ function Row({
   row,
   selected,
   fresh,
+  tint,
   compareSlot,
   onOpen,
   onPin,
@@ -73,6 +76,8 @@ function Row({
   row: RequestRow;
   selected: boolean;
   fresh: boolean;
+  /** The highlight rule that claimed this row, if any. */
+  tint: RuleId | null;
   /** `A` or `B` when this row is part of the comparison, `null` otherwise. */
   compareSlot: string | null;
   onOpen: (id: string) => void;
@@ -86,6 +91,7 @@ function Row({
       data-tick={tickOf(row, selected)}
       data-selected={selected}
       data-fresh={fresh}
+      data-rule={tint ?? undefined}
       onClick={(event) => {
         // One click target for the row, three meanings: the glyphs mark
         // themselves so a click on them never opens the detail.
@@ -296,6 +302,20 @@ export function RequestsScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, [shown, selected, onOpen, onSelect, onToggleCompare, state.pin]);
 
+  const [rules, setRules] = useState<ReadonlySet<RuleId>>(() =>
+    loadRules(typeof localStorage === 'undefined' ? null : localStorage),
+  );
+  const [rulesOpen, setRulesOpen] = useState(false);
+
+  const toggleRule = (id: RuleId) => {
+    setRules((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) next.add(id);
+      saveRules(typeof localStorage === 'undefined' ? null : localStorage, next);
+      return next;
+    });
+  };
+
   const patch = (next: Partial<FilterState>) => setFilter({ ...filter, ...next });
   const pinnedCount = rows.reduce((total, row) => total + (row.pinned ? 1 : 0), 0);
 
@@ -316,46 +336,55 @@ export function RequestsScreen({
           />
         </label>
 
-        <span className="divider" />
-        {METHODS.map((method) => (
-          <button
-            key={method}
-            type="button"
-            className="chip"
-            aria-pressed={filter.methods.includes(method)}
-            onClick={() => patch({ methods: toggle(filter.methods, method) })}
-          >
-            {method}
-          </button>
-        ))}
+        {/* Only the chips scroll: the rules pill and `clear` must stay put,
+            and an overflow container would clip the popover anyway. */}
+        <div className="filter-chips">
+          <span className="divider" />
+          {METHODS.map((method) => (
+            <button
+              key={method}
+              type="button"
+              className="chip"
+              aria-pressed={filter.methods.includes(method)}
+              onClick={() => patch({ methods: toggle(filter.methods, method) })}
+            >
+              {method}
+            </button>
+          ))}
 
-        <span className="divider" />
-        {STATUS_CLASSES.map((cls) => (
-          <button
-            key={cls}
-            type="button"
-            className="chip"
-            aria-pressed={filter.statusClasses.includes(cls)}
-            onClick={() => patch({ statusClasses: toggle(filter.statusClasses, cls) })}
-          >
-            {cls}xx
-          </button>
-        ))}
+          <span className="divider" />
+          {STATUS_CLASSES.map((cls) => (
+            <button
+              key={cls}
+              type="button"
+              className="chip"
+              aria-pressed={filter.statusClasses.includes(cls)}
+              onClick={() => patch({ statusClasses: toggle(filter.statusClasses, cls) })}
+            >
+              {cls}xx
+            </button>
+          ))}
 
-        <span className="divider" />
-        {DURATIONS.map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className="chip"
-            aria-pressed={filter.duration === value}
-            onClick={() => patch({ duration: value })}
-          >
-            {label}
-          </button>
-        ))}
+          <span className="divider" />
+          {DURATIONS.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              className="chip"
+              aria-pressed={filter.duration === value}
+              onClick={() => patch({ duration: value })}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-        <span className="spacer" />
+        <RulesPopover
+          enabled={rules}
+          open={rulesOpen}
+          onToggleOpen={() => setRulesOpen((open) => !open)}
+          onToggleRule={toggleRule}
+        />
         <button
           type="button"
           className="btn-secondary btn-danger"
@@ -400,6 +429,7 @@ export function RequestsScreen({
             row={row}
             selected={row.id === selected}
             fresh={now - (seenAt.current?.get(row.id) ?? 0) < FLASH_WINDOW_MS}
+            tint={tintOf(row, rules, row.id === selected)}
             compareSlot={slotOf(compare, row.id)}
             onOpen={onOpen}
             onPin={state.pin}
