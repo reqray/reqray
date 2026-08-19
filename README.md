@@ -181,8 +181,10 @@ docker compose -f docker-compose.staging.yml up --build
 | Frameworks | Fastify 5, Express 4/5, NestJS 10/11 (both platforms), any `node:http` — in standalone mode |
 | Database | `pg` (and Prisma 7 — it goes through node-postgres) |
 | Outgoing HTTP | undici and the built-in `fetch`, via `diagnostics_channel`; the calling line of code — via the `fetch` wrapper |
-| Detectors | N+1; sequential HTTP calls (a missed `Promise.all`) |
-| Panel | list with filters and a live feed, waterfall, SQL with EXPLAIN, bodies, headers, logs, request replay, exception groups |
+| Detectors | N+1; sequential HTTP calls (a missed `Promise.all`); the same outbound read made twice; the same cache key read twice; a request over its time budget |
+| Panel | list with a timeline scrubber, filters, highlight rules and a live feed; waterfall or flamegraph; findings; SQL with EXPLAIN; bodies, headers, logs; request replay; per-route aggregates; two-request comparison; exception groups with git blame |
+| Keyboard | `j`/`k` to move, `↵` to open, `/` to filter, `space` to pause, `p` to pin, `c` to compare, `?` for the list |
+| Export | HAR and a curl script (built by the collector, masking intact), trace JSON, a deep link |
 | Logs | `console.*` calls made during handling land in their request's record; terminal output is unchanged. pino/winston write past console and are not captured yet |
 | Transport | in-memory locally; HTTP batches with backpressure to `@loupe/server` |
 
@@ -193,6 +195,28 @@ cannot send its own; `ANALYZE` is never used, so nothing ever executes;
 parameterized queries are planned via `GENERIC_PLAN` (PostgreSQL 16+);
 EXPLAIN goes to the same pool that ran the original query. Outside local
 development it is opt-in only: `loupe({ explain: true })`.
+
+**Pinning.** A pinned request survives the ring buffer and ignores every
+filter, so the incident you are working on does not scroll away while you read
+it. Pinning is capped (50) — it suspends the promise that memory is bounded,
+so it gets a bound of its own.
+
+**Routes.** Per-route aggregates over the retained window: calls, rps,
+p50/p95/p99, error rate, average SQL and the share of recorded time each route
+accounts for. Paths are normalized per segment (`/api/orders/8812` →
+`/api/orders/:id`), and a hex token needs a digit to count as an id so that
+`/api/feed` stays `/api/feed`.
+
+**Compare.** Two requests side by side: a metrics table where the delta says
+whether the change is an improvement, both waterfalls on one scale, the work
+paired shape by shape, and a verdict in words — which is faster, by how much,
+whether the N+1 disappeared and what to look at next.
+
+**Test provenance.** A test harness that sets `x-loupe-test` on its requests
+gets them marked in the list, filterable by their own chip, and an exception
+group then names the test that reproduces it — the one to run again. Header
+values are latin1, so a name containing `›` should be percent-encoded; Loupe
+decodes it.
 
 ## Security
 
@@ -207,6 +231,11 @@ development it is opt-in only: `loupe({ explain: true })`.
 - Request replay outside local development is forbidden and enabled only by an
   explicit flag: a replay in production is a second card charge and a second
   email.
+- `git blame` for exception frames runs `git` on the machine the panel runs
+  on, so it follows the same rule: local development by default,
+  `loupe({ blame: true })` anywhere else.
+- Exports carry the masking with them: a curl script replays a request with
+  `[redacted]` where the credential was, and says so in a comment.
 - SQL parameter values are not collected in any mode. For local debugging
   there is an explicit opt-in, `collectSqlValues: true` — enable it
   deliberately: positional values carry no field names, so name-based masking
