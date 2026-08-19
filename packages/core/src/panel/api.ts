@@ -346,7 +346,10 @@ export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null 
         });
         return true;
       }
-      sendJson(response, 200, found);
+      // The row fields travel with the record: the panel's detail type
+      // extends its row type, and a payload missing half of it is a contract
+      // that silently reads `undefined`.
+      sendJson(response, 200, { ...toRow(found, (source.pinned?.() ?? []).includes(id)), ...found });
       return true;
     }
 

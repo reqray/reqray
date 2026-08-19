@@ -197,6 +197,13 @@ export function App() {
             a={compare.a}
             b={compare.b}
             onPick={(id) => setCompare((current) => (current ? { ...current, b: id } : current))}
+            onSwap={() =>
+              setCompare((current) => (current?.b ? { a: current.b, b: current.a } : current))
+            }
+            onClear={() => {
+              setPicked([]);
+              setScreen('requests');
+            }}
             onBack={() => setScreen('requests')}
           />
         ) : screen === 'detail' && selected ? (

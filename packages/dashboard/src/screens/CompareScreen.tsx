@@ -6,9 +6,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fetchRequest, fetchRequests, type RequestDetail, type RequestRow } from '../api';
-import { buildComparison } from '../compare';
+import { buildComparison, buildMetrics, buildVerdict } from '../compare';
 import { Waterfall } from '../components/Waterfall';
-import { clock, duration, durationTone, methodTone, statusTone } from '../format';
+import { clock, duration, durationTone, methodTone, spanColor, statusTone } from '../format';
 
 function useDetail(id: string | null): { detail: RequestDetail | null; error: string | null } {
   const [detail, setDetail] = useState<RequestDetail | null>(null);
@@ -89,11 +89,15 @@ export function CompareScreen({
   a,
   b,
   onPick,
+  onSwap,
+  onClear,
   onBack,
 }: {
   a: string;
   b: string | null;
   onPick: (id: string) => void;
+  onSwap: () => void;
+  onClear: () => void;
   onBack: () => void;
 }) {
   const left = useDetail(a);
@@ -142,6 +146,9 @@ export function CompareScreen({
   // One scale for both: the shorter request must LOOK shorter.
   const scale = Math.max(left.detail.durationMs, right.detail.durationMs, 1);
   const rows = buildComparison(left.detail, right.detail);
+  const metrics = buildMetrics(left.detail, right.detail);
+  // One scale for the paired bars as well, for the same reason.
+  const widest = Math.max(1, ...rows.map((row) => Math.max(row.a.totalMs, row.b.totalMs)));
 
   return (
     <div className="detail">
@@ -150,12 +157,43 @@ export function CompareScreen({
           ← requests
         </button>
         <span className="divider" />
-        <span className="detail-path ellipsis">
-          A vs B · Δ {duration(Math.abs(left.detail.durationMs - right.detail.durationMs))}
+        <span className="detail-path ellipsis">Compare</span>
+        <span className="mono s-dim" style={{ fontSize: 12 }}>
+          #{a} ↔ #{b}
         </span>
+        <span className="spacer" />
+        <button type="button" className="btn-secondary" onClick={onSwap}>
+          swap A ↔ B
+        </button>
+        <button type="button" className="btn-secondary" onClick={onClear}>
+          clear
+        </button>
       </header>
 
       <div className="detail-body">
+        <section className="waterfall">
+          <div className="waterfall-head">
+            <span className="label">METRICS</span>
+            <span className="label">Δ = B − A</span>
+          </div>
+          <div className="metrics-row label">
+            <span />
+            <span>A · #{a}</span>
+            <span>B · #{b}</span>
+            <span className="cell-right">Δ</span>
+          </div>
+          {metrics.map((metric) => (
+            <div key={metric.label} className="metrics-row">
+              <span className="s-dim">{metric.label}</span>
+              <span className="ellipsis">{metric.a}</span>
+              <span className="ellipsis">{metric.b}</span>
+              <span className={`cell-right s-${metric.tone === 'dim' ? 'dim' : metric.tone}`}>
+                {metric.delta}
+              </span>
+            </div>
+          ))}
+        </section>
+
         <SideHead tag="A" detail={left.detail} />
         <Waterfall detail={left.detail} totalOverride={scale} />
         <SideHead tag="B" detail={right.detail} />
@@ -163,37 +201,60 @@ export function CompareScreen({
 
         <section className="waterfall" style={{ marginTop: 16 }}>
           <div className="waterfall-head">
-            <span className="label">DIFF BY GROUP</span>
+            <span className="label">SPAN BY SPAN</span>
             <span className="label">Δ = B − A</span>
           </div>
-          <div className="cache-row label">
-            <span>GROUP</span>
-            <span className="cell-right">A</span>
-            <span className="cell-right">B</span>
+          <div className="span-row label">
+            <span>WORK</span>
+            <span>A</span>
+            <span>B</span>
             <span className="cell-right">Δ MS</span>
           </div>
           {rows.map((row) => (
-            <div key={row.key} className="cache-row">
+            <div key={row.key} className="span-row">
               <span className="ellipsis" title={row.label}>
+                <span className="wf-swatch" style={{ background: spanColor(row.kind) }} />
+                {row.a.calls === 0 || row.b.calls === 0 ? (
+                  <span className="s-warn" title="present on one side only">
+                    A ⟷ B{' '}
+                  </span>
+                ) : null}
                 {row.label}
               </span>
-              <span className={`cell-right ${row.a.calls === 0 ? 's-dim' : ''}`}>
-                {row.a.calls === 0 ? '—' : `${row.a.calls}× ${duration(row.a.totalMs)}`}
+              {/* Both bars share one scale, so the pair reads as before/after
+                  rather than as two unrelated charts. */}
+              <span className="pair-track" title={`A: ${duration(row.a.totalMs)}`}>
+                <span
+                  className="pair-bar pair-a"
+                  style={{
+                    width: `${(row.a.totalMs / widest) * 100}%`,
+                    background: spanColor(row.kind),
+                  }}
+                />
               </span>
-              <span className={`cell-right ${row.b.calls === 0 ? 's-dim' : ''}`}>
-                {row.b.calls === 0 ? '—' : `${row.b.calls}× ${duration(row.b.totalMs)}`}
+              <span className="pair-track" title={`B: ${duration(row.b.totalMs)}`}>
+                <span
+                  className="pair-bar"
+                  style={{
+                    width: `${(row.b.totalMs / widest) * 100}%`,
+                    background: spanColor(row.kind),
+                  }}
+                />
               </span>
               <span
                 className={`cell-right ${
-                  Math.abs(row.deltaMs) < 1 ? 's-dim' : row.deltaMs > 0 ? 's-warn' : 's-ok'
+                  Math.abs(row.deltaMs) < 1 ? 's-dim' : row.deltaMs > 0 ? 's-err' : 's-ok'
                 }`}
               >
-                {row.deltaMs > 0 ? '+' : ''}
-                {Math.round(row.deltaMs)}
+                {Math.abs(row.deltaMs) < 1
+                  ? '='
+                  : `${row.deltaMs > 0 ? '+' : '−'}${Math.round(Math.abs(row.deltaMs))}`}
               </span>
             </div>
           ))}
         </section>
+
+        <section className="verdict">{buildVerdict(left.detail, right.detail)}</section>
       </div>
     </div>
   );

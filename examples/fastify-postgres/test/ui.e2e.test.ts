@@ -691,10 +691,30 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
       await fresh.waitForSelector('.waterfall');
       const text = await fresh.$eval('body', (node) => node.textContent ?? '');
 
-      expect(text).toContain('DIFF BY GROUP');
+      expect(text).toContain('METRICS');
+      expect(text).toContain('SPAN BY SPAN');
       expect(text).toContain('line_items');
-      // Two waterfalls plus the diff table share the class.
-      expect(await fresh.$$eval('.waterfall', (nodes) => nodes.length)).toBeGreaterThanOrEqual(3);
+
+      // The metrics table states the facts, and the verdict states the point.
+      const metrics = await fresh.$$eval('.metrics-row', (nodes) =>
+        nodes.map((node) => node.textContent ?? ''),
+      );
+      expect(metrics.some((row) => row.includes('sql queries'))).toBe(true);
+      const verdict = await fresh.$eval('.verdict', (node) => node.textContent ?? '');
+      expect(verdict).toMatch(/faster by \d+ ms/);
+      expect(verdict).toContain('N+1');
+
+      // Swapping turns the comparison around.
+      await fresh.evaluate(() => {
+        const buttons = [...document.querySelectorAll('.detail-head button')];
+        (buttons.find((b) => b.textContent?.includes('swap')) as HTMLButtonElement)?.click();
+      });
+      await fresh.waitForFunction(
+        (before: string) => (document.querySelector('.verdict')?.textContent ?? '') !== before,
+        {},
+        verdict,
+      );
+      expect(await fresh.$eval('.verdict', (node) => node.textContent ?? '')).not.toBe(verdict);
     } finally {
       await fresh.close();
     }

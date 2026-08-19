@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { RequestDetail, Span } from '../src/api';
-import { buildComparison } from '../src/compare';
+import { buildComparison, buildMetrics, buildVerdict } from '../src/compare';
 
 let spanId = 0;
 
@@ -94,5 +94,141 @@ describe('comparing two requests', () => {
     expect(row?.a.calls).toBe(0);
     expect(row?.b.calls).toBe(1);
     expect(row?.deltaMs).toBe(3);
+  });
+});
+
+/** A whole request, not just its spans: the metrics table reads the facts. */
+function requestWith(over: Partial<RequestDetail>): RequestDetail {
+  return {
+    id: 'r1',
+    method: 'GET',
+    path: '/api/orders',
+    query: null,
+    route: '/api/orders',
+    status: 200,
+    durationMs: 100,
+    startedAt: 1_700_000_000_000,
+    sqlCount: 0,
+    httpCount: 0,
+    nPlusOne: false,
+    findingCount: 0,
+    hasError: false,
+    pinned: false,
+    test: null,
+    spans: [],
+    findings: [],
+    requestHeaders: {},
+    responseHeaders: {},
+    requestBody: null,
+    responseBody: null,
+    logs: [],
+    error: null,
+    droppedSpans: 0,
+    droppedLogs: 0,
+    ...over,
+  } as RequestDetail;
+}
+
+const row = (rows: ReturnType<typeof buildMetrics>, label: string) =>
+  rows.find((item) => item.label === label);
+
+describe('the metrics table', () => {
+  it('marks an identical value as the same', () => {
+    const rows = buildMetrics(requestWith({}), requestWith({}));
+
+    expect(row(rows, 'method')).toMatchObject({ delta: '=', tone: 'dim' });
+  });
+
+  it('a status difference is never just a difference', () => {
+    const rows = buildMetrics(requestWith({}), requestWith({ status: 500 }));
+
+    expect(row(rows, 'status')).toMatchObject({ a: '200', b: '500', delta: '≠', tone: 'warn' });
+  });
+
+  it('getting faster is good news, getting slower is not', () => {
+    const faster = buildMetrics(requestWith({ durationMs: 300 }), requestWith({ durationMs: 100 }));
+    const slower = buildMetrics(requestWith({ durationMs: 100 }), requestWith({ durationMs: 300 }));
+
+    expect(row(faster, 'duration')).toMatchObject({ delta: '−200 ms', tone: 'ok' });
+    expect(row(slower, 'duration')).toMatchObject({ delta: '+200 ms', tone: 'err' });
+  });
+
+  it('counts queries on both sides', () => {
+    const rows = buildMetrics(
+      requestWith({ spans: [db('SELECT 1', 1), db('SELECT 2', 1)] }),
+      requestWith({ spans: [db('SELECT 1', 1)] }),
+    );
+
+    expect(row(rows, 'sql queries')).toMatchObject({ a: '2', b: '1', delta: '−1', tone: 'ok' });
+  });
+
+  it('an absent test reads as a dash, not as an empty cell', () => {
+    const rows = buildMetrics(requestWith({}), requestWith({ test: 'orders.spec.ts:42' }));
+
+    expect(row(rows, 'from test')).toMatchObject({ a: '—', b: 'orders.spec.ts:42', delta: '≠' });
+  });
+});
+
+describe('the verdict', () => {
+  it('says which is faster, by how much, and what to do next', () => {
+    const slow = requestWith({
+      durationMs: 300,
+      spans: [db('SELECT 1', 1)],
+      findings: [
+        {
+          detector: 'n_plus_one',
+          severity: 'warn',
+          title: '150 identical queries ran in a loop',
+          costMs: 120,
+          callsite: {
+            file: '/srv/app/src/orders.js',
+            relative: 'src/orders.js',
+            line: 26,
+            column: 1,
+          },
+          evidence: {
+            kind: 'n_plus_one',
+            repeats: 150,
+            fingerprint: 'SELECT ?',
+            sample: 'SELECT 1',
+            totalMs: 120,
+            spanIds: [],
+          },
+          hint: 'use IN (…)',
+        },
+      ],
+    });
+    const fast = requestWith({ durationMs: 100 });
+
+    const verdict = buildVerdict(slow, fast);
+
+    expect(verdict).toContain('B is faster by 200 ms');
+    expect(verdict).toContain('67%');
+    expect(verdict).toContain('The N+1 is gone in B');
+    expect(verdict).toContain('src/orders.js:26');
+  });
+
+  it('names the slower side when it is B', () => {
+    const verdict = buildVerdict(
+      requestWith({ durationMs: 100 }),
+      requestWith({ durationMs: 400 }),
+    );
+
+    expect(verdict).toContain('A is faster');
+  });
+
+  it('says plainly when there is nothing between them', () => {
+    const verdict = buildVerdict(requestWith({}), requestWith({}));
+
+    expect(verdict).toContain('the same time');
+  });
+
+  it('does not invent a next step when neither side has a finding', () => {
+    const verdict = buildVerdict(
+      requestWith({ durationMs: 100 }),
+      requestWith({ durationMs: 200 }),
+    );
+
+    expect(verdict).toContain('the difference is elsewhere');
   });
 });
