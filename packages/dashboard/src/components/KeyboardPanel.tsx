@@ -6,6 +6,8 @@ const SHORTCUTS: Array<[key: string, what: string]> = [
   ['esc', 'close the topmost overlay, or go back to the list'],
   ['/', 'focus the filter field'],
   ['space', 'pause or resume the live feed'],
+  ['p', 'pin the selected request so the ring buffer keeps it'],
+  ['c', 'add the selected request to the comparison'],
   ['?', 'this panel'],
 ];
 

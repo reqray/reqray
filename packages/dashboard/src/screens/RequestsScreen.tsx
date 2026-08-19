@@ -16,8 +16,9 @@ import type { DurationFilter, FilterState, RequestsState } from '../useRequests'
 
 const METHODS = ['GET', 'POST', 'PATCH', 'DELETE'];
 
-/** `key: null` — the flag column, purely visual, nothing to sort by. */
+/** `key: null` — the pin/compare and flag columns, nothing to sort by. */
 const COLUMNS: Array<{ key: SortKey | null; label: string; right?: boolean }> = [
+  { key: null, label: '' },
   { key: 'method', label: 'METHOD' },
   { key: 'path', label: 'PATH' },
   { key: 'status', label: 'ST', right: true },
@@ -45,6 +46,12 @@ function toggle<T>(list: T[], value: T): T[] {
  */
 const FLASH_WINDOW_MS = 1500;
 
+/** `A` for the first picked request, `B` for the second, `null` for the rest. */
+function slotOf(compare: readonly string[], id: string): string | null {
+  const index = compare.indexOf(id);
+  return index < 0 ? null : index === 0 ? 'A' : 'B';
+}
+
 /** Left tick — the only severity marker visible while scanning the list. */
 function tickOf(row: RequestRow, selected: boolean): string | undefined {
   if (selected) return 'acc';
@@ -57,12 +64,19 @@ function Row({
   row,
   selected,
   fresh,
+  compareSlot,
   onOpen,
+  onPin,
+  onCompare,
 }: {
   row: RequestRow;
   selected: boolean;
   fresh: boolean;
+  /** `A` or `B` when this row is part of the comparison, `null` otherwise. */
+  compareSlot: string | null;
   onOpen: (id: string) => void;
+  onPin: (id: string, pinned: boolean) => void;
+  onCompare: (id: string) => void;
 }) {
   return (
     <button
@@ -71,8 +85,34 @@ function Row({
       data-tick={tickOf(row, selected)}
       data-selected={selected}
       data-fresh={fresh}
-      onClick={() => onOpen(row.id)}
+      onClick={(event) => {
+        // One click target for the row, three meanings: the glyphs mark
+        // themselves so a click on them never opens the detail.
+        const hit = (event.target as HTMLElement).closest('[data-act]');
+        const act = hit?.getAttribute('data-act');
+        if (act === 'pin') onPin(row.id, !row.pinned);
+        else if (act === 'cmp') onCompare(row.id);
+        else onOpen(row.id);
+      }}
     >
+      <span className="cell-marks">
+        <span
+          data-act="pin"
+          className={`mark ${row.pinned ? 's-acc' : 's-dim'}`}
+          title={
+            row.pinned ? 'pinned — survives the ring buffer' : 'pin — survives the ring buffer'
+          }
+        >
+          {row.pinned ? '●' : '○'}
+        </span>
+        <span
+          data-act="cmp"
+          className={`mark ${compareSlot ? 's-acc' : 's-dim'}`}
+          title="add to the comparison"
+        >
+          {compareSlot ?? '+'}
+        </span>
+      </span>
       <span className={`cell-method ${methodTone(row.method)}`}>{row.method}</span>
       <span className="ellipsis">
         {row.path}
@@ -136,14 +176,23 @@ function EmptyState({ error }: { error: string | null }) {
 export function RequestsScreen({
   state,
   selected,
+  compare,
   onOpen,
   onSelect,
+  onToggleCompare,
+  onClearCompare,
+  onOpenCompare,
 }: {
   state: RequestsState;
   selected: string | null;
+  /** Ids staged for comparison, in the order they were picked (at most two). */
+  compare: readonly string[];
   onOpen: (id: string) => void;
   /** Moves the highlight without leaving the list — what `j`/`k` do. */
   onSelect: (id: string) => void;
+  onToggleCompare: (id: string) => void;
+  onClearCompare: () => void;
+  onOpenCompare: () => void;
 }) {
   const { filter, setFilter, shown, rows, summary, oldestAt } = state;
   const searchRef = useRef<HTMLInputElement>(null);
@@ -223,14 +272,26 @@ export function RequestsScreen({
       if (event.key === 'Enter' && selected) {
         event.preventDefault();
         onOpen(selected);
+        return;
+      }
+      if (event.key === 'p' && selected) {
+        event.preventDefault();
+        const row = shown.find((item) => item.id === selected);
+        if (row) state.pin(row.id, !row.pinned);
+        return;
+      }
+      if (event.key === 'c' && selected) {
+        event.preventDefault();
+        onToggleCompare(selected);
       }
     };
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [shown, selected, onOpen, onSelect]);
+  }, [shown, selected, onOpen, onSelect, onToggleCompare, state.pin]);
 
   const patch = (next: Partial<FilterState>) => setFilter({ ...filter, ...next });
+  const pinnedCount = rows.reduce((total, row) => total + (row.pinned ? 1 : 0), 0);
 
   if (rows.length === 0) return <EmptyState error={state.error} />;
 
@@ -333,10 +394,34 @@ export function RequestsScreen({
             row={row}
             selected={row.id === selected}
             fresh={now - (seenAt.current?.get(row.id) ?? 0) < FLASH_WINDOW_MS}
+            compareSlot={slotOf(compare, row.id)}
             onOpen={onOpen}
+            onPin={state.pin}
+            onCompare={onToggleCompare}
           />
         ))}
       </div>
+
+      {compare.length > 0 ? (
+        <div className="cmp-bar">
+          <span className="s-fg2">
+            {compare.length === 1
+              ? '1 selected · pick a second request (or press c)'
+              : `A #${compare[0]} ↔ B #${compare[1]}`}
+          </span>
+          <button
+            type="button"
+            className={compare.length === 2 ? 'btn-primary' : 'btn-secondary'}
+            disabled={compare.length < 2}
+            onClick={onOpenCompare}
+          >
+            COMPARE
+          </button>
+          <button type="button" className="btn-secondary" onClick={onClearCompare}>
+            clear
+          </button>
+        </div>
+      ) : null}
 
       {/* Outside the scroller on purpose: it is an offer to travel, and it has
           to stay put while the rows it counts move. */}
@@ -360,9 +445,11 @@ export function RequestsScreen({
         <span>slow &gt;500ms: {count(summary.slow)}</span>
         <span>errors: {count(summary.errors)}</span>
         <span>n+1: {count(summary.withFindings)}</span>
+        <span>pinned: {count(pinnedCount)}</span>
         <span className="spacer" />
         <span>
           ring buffer {count(rows.length)}
+          {pinnedCount > 0 ? ' · pinned entries exempt' : ''}
           {oldestAt ? ` · retained ${formatSpan(Date.now() - oldestAt)}` : ''}
         </span>
       </div>

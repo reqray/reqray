@@ -320,6 +320,67 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     );
   });
 
+  it('a pinned row stays through a filter that excludes it', async () => {
+    // The N+1 row is the one filter chips can single out, so pin its opposite:
+    // an ordinary GET that `N+1` would otherwise hide.
+    const rows = await page.$$('.row');
+    const plain = rows[rows.length - 1];
+    const path = await plain?.$eval('.ellipsis', (node) => node.textContent ?? '');
+    await plain?.$eval('[data-act="pin"]', (node) => (node as HTMLElement).click());
+
+    await page.waitForSelector('.row [data-act="pin"].s-acc');
+    expect(await page.$eval('.statusbar', (node) => node.textContent ?? '')).toContain('pinned: 1');
+
+    try {
+      const chips = await page.$$('.chip');
+      await chips[chips.length - 1]?.click(); // N+1
+      await page.waitForFunction(
+        (previous: number) => document.querySelectorAll('.row').length < previous,
+        {},
+        rows.length,
+      );
+
+      const shown = await page.$$eval('.row .ellipsis', (nodes) =>
+        nodes.map((node) => node.textContent ?? ''),
+      );
+      // Two rows now: the one the filter matched, and the pinned one.
+      expect(shown).toContain('/api/orders');
+      expect(shown).toContain(path);
+      expect(await page.$eval('.statusbar', (node) => node.textContent ?? '')).toContain(
+        'pinned entries exempt',
+      );
+    } finally {
+      const chips = await page.$$('.chip');
+      await chips[chips.length - 4]?.click(); // any
+      // Unpin so the rest of the suite sees an ordinary list.
+      await page.$eval('.row [data-act="pin"].s-acc', (node) => (node as HTMLElement).click());
+      await page.waitForFunction(
+        () => document.querySelector('.row [data-act="pin"].s-acc') === null,
+      );
+    }
+  });
+
+  it('picking two requests offers the comparison', async () => {
+    const rows = await page.$$('.row');
+    await rows[0]?.$eval('[data-act="cmp"]', (node) => (node as HTMLElement).click());
+    await page.waitForSelector('.cmp-bar');
+    expect(await page.$eval('.cmp-bar', (node) => node.textContent ?? '')).toContain('1 selected');
+
+    await rows[1]?.$eval('[data-act="cmp"]', (node) => (node as HTMLElement).click());
+    await page.waitForFunction(() =>
+      (document.querySelector('.cmp-bar')?.textContent ?? '').includes('↔'),
+    );
+
+    await page.$eval('.cmp-bar .btn-primary', (node) => (node as HTMLElement).click());
+    await page.waitForFunction(() => location.hash.startsWith('#l/cmp/'));
+    await page.waitForSelector('.waterfall');
+
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.row');
+    await page.$eval('.cmp-bar .btn-secondary', (node) => (node as HTMLElement).click());
+    await page.waitForFunction(() => document.querySelector('.cmp-bar') === null);
+  });
+
   it('the new-row flash plays once and does not return with filters', async () => {
     const before = await page.$$eval('.row', (nodes) => nodes.length);
     await fetch(`${base}/api/order`);

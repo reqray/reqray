@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { clearRequests, fetchRequests, type RequestRow, subscribeToRequests } from './api';
+import {
+  clearRequests,
+  fetchRequests,
+  pinRequest,
+  type RequestRow,
+  subscribeToRequests,
+} from './api';
 import { DEFAULT_SORT, type SortState, sortRows } from './sort';
 import { inWindow, type TimeWindow } from './timeline';
 
@@ -34,6 +40,8 @@ export interface RequestsState {
   setFilter: (next: FilterState) => void;
   setSort: (next: SortState) => void;
   setWindow: (next: TimeWindow | null) => void;
+  /** Pins or unpins a request; a refusal leaves the row as it was. */
+  pin: (id: string, pinned: boolean) => void;
   clear: () => Promise<void>;
   reload: () => void;
 }
@@ -114,7 +122,10 @@ export function useRequests(active: boolean, live: boolean): RequestsState {
   const shown = useMemo(
     () =>
       sortRows(
-        rows.filter((row) => inWindow(row.startedAt, win) && matches(row, filter)),
+        // A pinned row is one the reader deliberately set aside; it stays on
+        // screen through filters and through the timeline window, or pinning
+        // would mean "keep it, then hide it".
+        rows.filter((row) => row.pinned || (inWindow(row.startedAt, win) && matches(row, filter))),
         sort,
       ),
     [rows, filter, sort, win],
@@ -141,6 +152,14 @@ export function useRequests(active: boolean, live: boolean): RequestsState {
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
 
+  const pin = useCallback((id: string, wanted: boolean) => {
+    void pinRequest(id, wanted).then((pinned) => {
+      // The collector decides: it may be out of pin slots, or the record may
+      // already be gone. The row follows what it answers.
+      setRows((current) => current.map((row) => (row.id === id ? { ...row, pinned } : row)));
+    });
+  }, []);
+
   return {
     rows,
     shown,
@@ -154,6 +173,7 @@ export function useRequests(active: boolean, live: boolean): RequestsState {
     setFilter,
     setSort,
     setWindow,
+    pin,
     clear,
     reload,
   };

@@ -93,6 +93,50 @@
   font-size: 12px;
 }
 
+/* ── Pin and comparison marks ────────────────────────────────────────── */
+
+.cell-marks {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+
+/* Their own hit targets inside the row button: the row opens the detail, the
+   marks do their own thing. */
+.mark {
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mark:hover {
+  color: var(--acc);
+}
+
+/* ── Comparison bar ──────────────────────────────────────────────────── */
+
+.cmp-bar {
+  position: absolute;
+  bottom: 42px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 13px;
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.cmp-bar .btn-secondary[disabled] {
+  color: var(--fg3);
+  cursor: default;
+}
+
 /* ── New-requests banner ─────────────────────────────────────────────── */
 
 .new-banner {
@@ -158,7 +202,7 @@
 /* Shared by the column header and every row, so they cannot drift apart. */
 .row-grid {
   display: grid;
-  grid-template-columns: 62px minmax(0, 1fr) 52px 40px 96px 60px 112px;
+  grid-template-columns: 36px 62px minmax(0, 1fr) 52px 40px 96px 60px 112px;
   gap: 10px;
   padding: 0 10px 0 8px;
   align-items: center;

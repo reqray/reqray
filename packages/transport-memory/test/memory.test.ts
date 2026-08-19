@@ -1,5 +1,5 @@
 import type { RecordedRequest } from '@loupe/core';
-import { memoryTransport } from '@loupe/transport-memory';
+import { memoryTransport, PIN_LIMIT } from '@loupe/transport-memory';
 import { describe, expect, it, vi } from 'vitest';
 
 function request(id: string, startedAt = 1_000): RecordedRequest {
@@ -86,5 +86,87 @@ describe('in-memory transport', () => {
     expect(() => store.send(request('a'))).not.toThrow();
     expect(healthy).toHaveBeenCalledOnce();
     expect(store.list()).toHaveLength(1);
+  });
+
+  describe('pinning', () => {
+    it('keeps a pinned request the ring has dropped', () => {
+      const store = memoryTransport({ capacity: 2 });
+      store.send(request('a', 1_000));
+      store.pin('a', true);
+      store.send(request('b', 2_000));
+      store.send(request('c', 3_000));
+
+      // 'a' was pushed out of a two-slot ring, and is still here.
+      expect(store.list().map((item) => item.id)).toEqual(['c', 'b', 'a']);
+      expect(store.get('a')?.path).toBe('/a');
+      expect(store.pinned()).toEqual(['a']);
+    });
+
+    it('lets a request go again, and the ring forgets it', () => {
+      const store = memoryTransport({ capacity: 2 });
+      store.send(request('a', 1_000));
+      store.pin('a', true);
+      store.send(request('b', 2_000));
+      store.send(request('c', 3_000));
+
+      store.pin('a', false);
+
+      expect(store.list().map((item) => item.id)).toEqual(['c', 'b']);
+      expect(store.get('a')).toBeUndefined();
+      expect(store.pinned()).toEqual([]);
+    });
+
+    it('refuses to pin what is already gone', () => {
+      const store = memoryTransport({ capacity: 1 });
+      store.send(request('a'));
+      store.send(request('b'));
+
+      expect(store.pin('a', true)).toBe(false);
+      expect(store.pinned()).toEqual([]);
+    });
+
+    it('pinning is bounded — it suspends the ring, it does not remove the bound', () => {
+      const store = memoryTransport({ capacity: PIN_LIMIT + 10 });
+      for (let i = 0; i < PIN_LIMIT + 5; i++) store.send(request(`r${i}`, 1_000 + i));
+
+      const accepted = Array.from({ length: PIN_LIMIT + 5 }, (_, i) => store.pin(`r${i}`, true));
+
+      expect(accepted.filter(Boolean)).toHaveLength(PIN_LIMIT);
+      expect(store.pinned()).toHaveLength(PIN_LIMIT);
+      // Unpinning always works, and makes room again.
+      expect(store.pin('r0', false)).toBe(true);
+      expect(store.pin(`r${PIN_LIMIT + 4}`, true)).toBe(true);
+    });
+
+    it('unpinning something that was never pinned is not an error', () => {
+      const store = memoryTransport();
+
+      expect(store.pin('nope', false)).toBe(true);
+    });
+
+    it('counts pins in the stats without inflating the ring', () => {
+      const store = memoryTransport({ capacity: 2 });
+      store.send(request('a', 1_000));
+      store.pin('a', true);
+      store.send(request('b', 2_000));
+      store.send(request('c', 3_000));
+
+      const stats = store.stats();
+      expect(stats.pinned).toBe(1);
+      expect(stats.size).toBe(2);
+      // The oldest retained request, pinned survivors included.
+      expect(stats.oldestAt).toBe(1_000);
+    });
+
+    it('clear means clear, pins included', () => {
+      const store = memoryTransport();
+      store.send(request('a'));
+      store.pin('a', true);
+
+      store.clear();
+
+      expect(store.list()).toEqual([]);
+      expect(store.pinned()).toEqual([]);
+    });
   });
 });

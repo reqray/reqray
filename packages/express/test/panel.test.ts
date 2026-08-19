@@ -214,6 +214,43 @@ describe('panel API', () => {
     expect(response.status).toBe(404);
   });
 
+  it('pins a request, and says so in the row', async () => {
+    const { app, store } = harness();
+    const base = await serve(app);
+
+    await fetch(`${base}/orders`);
+    await waitFor(store, 1);
+    const id = store.list()[0]?.id;
+
+    const pin = await fetch(`${base}/_loupe/api/pin`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, pinned: true }),
+    });
+
+    expect(pin.status).toBe(200);
+    expect(await pin.json()).toMatchObject({ id, pinned: true });
+
+    const list = (await (await fetch(`${base}/_loupe/api/requests`)).json()) as {
+      requests: Array<{ id: string; pinned: boolean }>;
+    };
+    expect(list.requests[0]).toMatchObject({ id, pinned: true });
+  });
+
+  it('refuses to pin a request that is gone, with a reason', async () => {
+    const { app } = harness();
+    const base = await serve(app);
+
+    const response = await fetch(`${base}/_loupe/api/pin`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'no-such-id', pinned: true }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { error: string }).error).toContain('could not pin');
+  });
+
   it('clears the buffer', async () => {
     const { app, store } = harness();
     const base = await serve(app);

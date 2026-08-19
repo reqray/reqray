@@ -19,6 +19,8 @@ export interface RequestRow {
   /** How many findings the detectors produced. */
   findingCount: number;
   hasError: boolean;
+  /** Held past its turn in the ring buffer, and exempt from filters. */
+  pinned: boolean;
 }
 
 export interface RequestSummary {
@@ -216,6 +218,27 @@ export async function fetchExceptions(signal?: AbortSignal): Promise<ExceptionGr
 
 export async function clearRequests(): Promise<void> {
   await fetch(`${apiBase()}/requests`, { method: 'DELETE' });
+}
+
+/**
+ * Pins or unpins a request on the collector.
+ *
+ * @returns whether it is pinned now — a refusal (gone, or too many pinned)
+ * comes back as `false` rather than an exception, because the only thing the
+ * panel can do about it is leave the glyph alone.
+ */
+export async function pinRequest(id: string, pinned: boolean): Promise<boolean> {
+  try {
+    const response = await fetch(`${apiBase()}/pin`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, pinned }),
+    });
+    if (!response.ok) return false;
+    return ((await response.json()) as { pinned?: boolean }).pinned === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function replayRequest(payload: {

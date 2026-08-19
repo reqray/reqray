@@ -25,6 +25,17 @@ export interface PanelSource {
   get(id: string): RecordedRequest | undefined;
   clear(): void;
   subscribe(listener: (request: RecordedRequest) => void): () => void;
+  /**
+   * Keeps a request past its turn in the ring buffer, or lets it go again.
+   *
+   * Optional: a store without pinning is still a valid source, and the panel
+   * answers the pin route with an explanation instead of pretending.
+   *
+   * @returns `false` when the request is gone or the pin limit is reached.
+   */
+  pin?(id: string, pinned: boolean): boolean;
+  /** Ids currently pinned. */
+  pinned?(): readonly string[];
 }
 
 /** Everything the panel handler needs to serve a request. */
@@ -62,6 +73,8 @@ export interface RequestRow {
   /** How many findings the detectors produced. */
   readonly findingCount: number;
   readonly hasError: boolean;
+  /** Held past its turn in the ring buffer, and exempt from filters. */
+  readonly pinned: boolean;
 }
 
 /**
@@ -71,7 +84,7 @@ export interface RequestRow {
  * and bodies would weigh megabytes. Details come from a separate request by
  * identifier.
  */
-export function toRow(request: RecordedRequest): RequestRow {
+export function toRow(request: RecordedRequest, pinned = false): RequestRow {
   let sqlCount = 0;
   for (const span of request.spans) {
     if (span.kind === 'db') sqlCount++;
@@ -89,6 +102,7 @@ export function toRow(request: RecordedRequest): RequestRow {
     nPlusOne: request.findings.some((finding) => finding.detector === 'n_plus_one'),
     findingCount: request.findings.length,
     hasError: request.error !== null || request.status >= 500,
+    pinned,
   };
 }
 
@@ -279,10 +293,19 @@ export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null 
     if (route === '/api/requests' && method === 'GET') {
       const all = source.list();
       const shown = filterRequests(all, parseFilter(url.searchParams));
+      // Which rows are pinned travels with the rows; the exemption from
+      // filters and the time window is applied where those live — in the
+      // panel, which filters client-side so the live feed and the list agree.
+      const pinned = new Set(source.pinned?.() ?? []);
       sendJson(response, 200, {
-        requests: shown.map(toRow),
+        requests: shown.map((record) => toRow(record, pinned.has(record.id))),
         summary: summarize(all, shown, options.sampling.slowMs || 500),
       });
+      return true;
+    }
+
+    if (route === '/api/pin' && method === 'POST') {
+      handlePin(source, request, response);
       return true;
     }
 
@@ -355,6 +378,36 @@ export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null 
     });
     return true;
   };
+}
+
+function handlePin(source: PanelSource, request: IncomingMessage, response: ServerResponse): void {
+  void (async () => {
+    if (!source.pin) {
+      sendJson(response, 501, { error: 'this store cannot pin requests' });
+      return;
+    }
+    try {
+      const payload = (await readBody(request)) as { id?: unknown; pinned?: unknown };
+      if (typeof payload.id !== 'string') {
+        sendJson(response, 400, { error: 'id is required' });
+        return;
+      }
+      const wanted = payload.pinned !== false;
+      const ok = source.pin(payload.id, wanted);
+      if (!ok && wanted) {
+        // Either the record is already gone, or the pin board is full — both
+        // are worth saying out loud rather than silently doing nothing.
+        sendJson(response, 409, {
+          error: 'could not pin: the request is gone, or too many are pinned already',
+        });
+        return;
+      }
+      sendJson(response, 200, { id: payload.id, pinned: wanted && ok });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      sendJson(response, 400, { error: `pin failed: ${reason}` });
+    }
+  })();
 }
 
 function handleExplain(

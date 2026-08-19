@@ -29,6 +29,8 @@ export function App() {
   const [live, setLive] = useState(true);
   const [meta, setMeta] = useState<PanelMeta | null>(null);
   const [keysOpen, setKeysOpen] = useState(false);
+  /** Requests staged for comparison, oldest pick first; at most two. */
+  const [picked, setPicked] = useState<string[]>([]);
 
   // The feed only runs on the list screen: nothing behind the detail screen
   // would show a new row anyway.
@@ -104,6 +106,14 @@ export function App() {
   const openCompare = useCallback((a: string) => {
     setCompare({ a, b: null });
     setScreen('compare');
+  }, []);
+
+  const togglePicked = useCallback((id: string) => {
+    setPicked((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      // Two at a time: a third pick pushes out the oldest.
+      return current.length < 2 ? [...current, id] : [current[1] as string, id];
+    });
   }, []);
 
   return (
@@ -191,8 +201,17 @@ export function App() {
           <RequestsScreen
             state={requests}
             selected={selected}
+            compare={picked}
             onOpen={openRequest}
             onSelect={setSelected}
+            onToggleCompare={togglePicked}
+            onClearCompare={() => setPicked([])}
+            onOpenCompare={() => {
+              const [a, b] = picked;
+              if (!a || !b) return;
+              setCompare({ a, b });
+              setScreen('compare');
+            }}
           />
         )}
 
