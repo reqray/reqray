@@ -59,7 +59,15 @@ describe('blaming a real repository', () => {
     git('init', '-q');
     writeFileSync(join(dir, 'orders.js'), 'const a = 1;\nconst b = 2;\n');
     git('add', '.');
-    git('-c', 'user.name=Ada Lovelace', '-c', 'user.email=ada@example.com', 'commit', '-qm', 'first');
+    git(
+      '-c',
+      'user.name=Ada Lovelace',
+      '-c',
+      'user.email=ada@example.com',
+      'commit',
+      '-qm',
+      'first',
+    );
     return dir;
   }
 

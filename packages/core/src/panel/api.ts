@@ -13,12 +13,12 @@ import type { ResolvedOptions } from '../config.js';
 import { warnOnce } from '../logger.js';
 import { isPanelRequestAllowed } from '../panel.js';
 import type { RecordedRequest } from '../types.js';
+import { blameLine } from './blame.js';
 import { groupExceptions } from './exceptions.js';
 import { ExplainError, runExplain } from './explain.js';
+import { toCurlScript, toHar } from './export.js';
 import { filterRequests, type RequestFilter, summarize } from './filters.js';
 import { type ReplayInput, runReplay } from './replay.js';
-import { blameLine } from './blame.js';
-import { toCurlScript, toHar } from './export.js';
 import { normalizeRoute, routeStats } from './routes.js';
 
 /** Where the panel gets its data. Implemented by the transport store. */
@@ -84,6 +84,13 @@ export interface RequestRow {
   readonly nPlusOne: boolean;
   /** How many findings the detectors produced. */
   readonly findingCount: number;
+  /**
+   * The detector behind the costliest finding, for the flag in the list.
+   *
+   * A count alone cannot say what the flag should read: "SEQ" over a budget
+   * breach is simply wrong.
+   */
+  readonly flag: string | null;
   readonly hasError: boolean;
   /** Held past its turn in the ring buffer, and exempt from filters. */
   readonly pinned: boolean;
@@ -119,6 +126,7 @@ export function toRow(request: RecordedRequest, pinned = false): RequestRow {
     httpCount,
     nPlusOne: request.findings.some((finding) => finding.detector === 'n_plus_one'),
     findingCount: request.findings.length,
+    flag: [...request.findings].sort((a, b) => b.costMs - a.costMs)[0]?.detector ?? null,
     hasError: request.error !== null || request.status >= 500,
     pinned,
     test: request.test,
@@ -402,7 +410,10 @@ export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null 
       // The row fields travel with the record: the panel's detail type
       // extends its row type, and a payload missing half of it is a contract
       // that silently reads `undefined`.
-      sendJson(response, 200, { ...toRow(found, (source.pinned?.() ?? []).includes(id)), ...found });
+      sendJson(response, 200, {
+        ...toRow(found, (source.pinned?.() ?? []).includes(id)),
+        ...found,
+      });
       return true;
     }
 

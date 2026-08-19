@@ -98,7 +98,11 @@ describe('curl export', () => {
 
   it('leaves out the headers curl owns', () => {
     const script = toCurlScript(
-      [request({ requestHeaders: { host: 'x', 'content-length': '10', accept: 'application/json' } })],
+      [
+        request({
+          requestHeaders: { host: 'x', 'content-length': '10', accept: 'application/json' },
+        }),
+      ],
       'http://localhost:3000',
     );
 
@@ -108,10 +112,7 @@ describe('curl export', () => {
   });
 
   it('quotes values that would otherwise break out of the shell', () => {
-    const script = toCurlScript(
-      [request({ query: "q=';rm -rf /" })],
-      'http://localhost:3000',
-    );
+    const script = toCurlScript([request({ query: "q=';rm -rf /" })], 'http://localhost:3000');
 
     // The dangerous quote is escaped rather than closing the argument.
     expect(script).toContain(`'\\''`);

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RequestRow } from '../api';
 import { RulesPopover } from '../components/RulesPopover';
 import { TimelineScrubber } from '../components/TimelineScrubber';
+import { badgeFor } from '../components/Waterfall';
 import {
   clock,
   count,
@@ -137,13 +138,9 @@ function Row({
         {row.status}
       </span>
       <span className="cell-center">
-        {row.nPlusOne ? (
-          <span className="flag" title="Possible N+1 query pattern">
-            N+1
-          </span>
-        ) : row.findingCount > 0 ? (
-          <span className="flag" title="Sequential calls that could run in parallel">
-            SEQ
+        {row.flag ? (
+          <span className="flag" title={`${row.findingCount} finding(s) — ${row.flag}`}>
+            {badgeFor(row.flag)}
           </span>
         ) : null}
       </span>

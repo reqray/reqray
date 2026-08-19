@@ -22,6 +22,8 @@ export interface RequestRow {
   nPlusOne: boolean;
   /** How many findings the detectors produced. */
   findingCount: number;
+  /** The detector behind the costliest finding — what the list flag reads. */
+  flag: string | null;
   hasError: boolean;
   /** Held past its turn in the ring buffer, and exempt from filters. */
   pinned: boolean;
