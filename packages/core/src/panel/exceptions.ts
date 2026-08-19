@@ -40,6 +40,11 @@ export interface ExceptionGroup {
   readonly frames: readonly ExceptionFrame[];
   /** Histogram of occurrences over time, for the sparkline. */
   readonly buckets: readonly number[];
+  /**
+   * A test that reproduced this exception, when one of the requests carried a
+   * test name. The most recent one wins — it is the one to run again.
+   */
+  readonly test: string | null;
 }
 
 /** Buckets in the sparkline — as many as there are bars in the mockup. */
@@ -95,6 +100,7 @@ interface Accumulator {
   lastSeenAt: number;
   readonly requestIds: string[];
   readonly times: number[];
+  test: string | null;
 }
 
 function originOf(frames: readonly ExceptionFrame[], options: ResolvedStackOptions): string | null {
@@ -155,6 +161,7 @@ export function groupExceptions(
         lastSeenAt: request.startedAt,
         requestIds: [],
         times: [],
+        test: null,
       };
       groups.set(id, group);
     }
@@ -166,6 +173,8 @@ export function groupExceptions(
       group.message = error.message;
       group.where = `${request.method} ${request.path}`;
     }
+    // Records arrive newest first, so the first test name seen is the latest.
+    if (group.test === null && request.test !== null) group.test = request.test;
     // The request list is capped: the panel needs the latest ones, not all.
     if (group.requestIds.length < 50) group.requestIds.push(request.id);
   }
@@ -185,6 +194,7 @@ export function groupExceptions(
         requestIds: group.requestIds,
         frames: group.frames,
         buckets: bucketize(group.times, now, windowMs),
+        test: group.test,
       }),
     )
     .sort((a, b) => b.count - a.count || b.lastSeenAt - a.lastSeenAt);

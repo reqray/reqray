@@ -28,6 +28,7 @@ function record(id: string, path = '/orders'): RecordedRequest {
     error: null,
     droppedSpans: 0,
     droppedLogs: 0,
+    test: null,
   };
 }
 

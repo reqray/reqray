@@ -33,6 +33,7 @@ const DURATIONS: Array<[DurationFilter, string]> = [
   ['slow100', '>100ms'],
   ['slow500', '>500ms'],
   ['nplus', 'N+1'],
+  ['tests', 'tests'],
 ];
 
 function toggle<T>(list: T[], value: T): T[] {
@@ -117,6 +118,11 @@ function Row({
       <span className="ellipsis">
         {row.path}
         {row.query ? <span className="s-dim">?{row.query}</span> : null}
+        {row.test ? (
+          <span className="test-mark" title={`issued by ${row.test}`}>
+            TEST
+          </span>
+        ) : null}
       </span>
       <span
         className={`cell-right ${statusTone(row.status)}`}

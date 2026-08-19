@@ -2,7 +2,8 @@
 
 .detail {
   display: grid;
-  grid-template-rows: 44px 1fr;
+  /* The test strip is optional, so the body takes what is left. */
+  grid-template-rows: 44px auto 1fr;
   height: 100%;
   overflow: hidden;
 }
@@ -40,6 +41,17 @@
 .status-badge {
   padding: 1px 5px;
   border: 1px solid currentcolor;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.test-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 14px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
   font-family: var(--mono);
   font-size: 13px;
 }

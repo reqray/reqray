@@ -381,6 +381,26 @@ textarea {
   white-space: nowrap;
 }
 
+/* ── Test provenance ─────────────────────────────────────────────────── */
+
+/* Follows the path in the list: a request a test issued. */
+.test-mark {
+  margin-left: 6px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--acc);
+}
+
+.test-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid var(--acc);
+  color: var(--acc);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* ── Keyboard panel ──────────────────────────────────────────────────── */
 
 .keys-open {

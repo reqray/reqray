@@ -163,9 +163,7 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
 
   it('filters by chips', async () => {
     const before = await page.$$eval('.row', (nodes) => nodes.length);
-    const chips = await page.$$('.chip');
-    // `N+1` is the last chip of the duration group.
-    await chips[chips.length - 1]?.click();
+    await chip('N+1');
     await page.waitForFunction(
       (previous: number) => document.querySelectorAll('.row').length < previous,
       {},
@@ -174,13 +172,25 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
 
     expect(await page.$$eval('.row', (nodes) => nodes.length)).toBe(1);
 
-    await chips[chips.length - 4]?.click();
+    await chip('any');
     await page.waitForFunction(
       (previous: number) => document.querySelectorAll('.row').length === previous,
       {},
       before,
     );
   });
+
+  /** Clicks the filter chip with this exact label. */
+  async function chip(label: string): Promise<void> {
+    const target = await page.evaluateHandle((wanted: string) => {
+      const found = [...document.querySelectorAll('.chip')].find(
+        (node) => node.textContent?.trim() === wanted,
+      );
+      if (!found) throw new Error(`no chip labelled ${wanted}`);
+      return found as HTMLElement;
+    }, label);
+    await (target.asElement() as unknown as { click(): Promise<void> }).click();
+  }
 
   /** Enough traffic that the list scrolls — the banner needs somewhere to hide. */
   async function burst(times: number): Promise<void> {
@@ -332,8 +342,7 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     expect(await page.$eval('.statusbar', (node) => node.textContent ?? '')).toContain('pinned: 1');
 
     try {
-      const chips = await page.$$('.chip');
-      await chips[chips.length - 1]?.click(); // N+1
+      await chip('N+1');
       await page.waitForFunction(
         (previous: number) => document.querySelectorAll('.row').length < previous,
         {},
@@ -350,12 +359,46 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
         'pinned entries exempt',
       );
     } finally {
-      const chips = await page.$$('.chip');
-      await chips[chips.length - 4]?.click(); // any
+      await chip('any');
       // Unpin so the rest of the suite sees an ordinary list.
       await page.$eval('.row [data-act="pin"].s-acc', (node) => (node as HTMLElement).click());
       await page.waitForFunction(
         () => document.querySelector('.row [data-act="pin"].s-acc') === null,
+      );
+    }
+  });
+
+  it('marks requests a test issued, and filters down to them', async () => {
+    const name = 'orders.spec.ts:42 › creates an order';
+    const before = await page.$$eval('.row', (nodes) => nodes.length);
+    await fetch(`${base}/api/order`, {
+      headers: { 'x-loupe-test': encodeURIComponent(name) },
+    });
+    await page.waitForFunction(
+      (previous: number) => document.querySelectorAll('.row').length > previous,
+      {},
+      before,
+    );
+
+    await page.waitForSelector('.test-mark');
+
+    try {
+      await chip('tests');
+      await page.waitForFunction(() => document.querySelectorAll('.row').length === 1);
+
+      // Opening it shows who issued it, spelled out.
+      await (await page.$('.row'))?.click();
+      await page.waitForSelector('.test-strip');
+      expect(await page.$eval('.test-strip', (node) => node.textContent ?? '')).toContain(name);
+
+      await page.keyboard.press('Escape');
+      await page.waitForSelector('.row');
+    } finally {
+      await chip('any');
+      await page.waitForFunction(
+        (previous: number) => document.querySelectorAll('.row').length > previous,
+        {},
+        before,
       );
     }
   });
@@ -399,14 +442,13 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
 
     // POST-only unmounts the fresh GET row; lifting the filter remounts it —
     // the exact path that used to replay the flash on every filter change.
-    const chips = await page.$$('.chip');
-    await chips[1]?.click();
+    await chip('POST');
     await page.waitForFunction(
       (previous: number) => document.querySelectorAll('.row').length < previous,
       {},
       before + 1,
     );
-    await chips[1]?.click();
+    await chip('POST');
     await page.waitForFunction(
       (previous: number) => document.querySelectorAll('.row').length >= previous,
       {},

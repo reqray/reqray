@@ -28,6 +28,7 @@ function request(overrides: Partial<RecordedRequest> = {}): RecordedRequest {
     error: null,
     droppedSpans: 0,
     droppedLogs: 0,
+    test: null,
     ...overrides,
   };
 }

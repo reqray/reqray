@@ -9,8 +9,12 @@ import {
 import { DEFAULT_SORT, type SortState, sortRows } from './sort';
 import { inWindow, type TimeWindow } from './timeline';
 
-/** Duration chips are radio-like: exactly one is active. */
-export type DurationFilter = 'any' | 'slow100' | 'slow500' | 'nplus';
+/**
+ * The chips in the last filter group are radio-like: exactly one is active.
+ * `tests` is not about duration, but it belongs to the same single-choice
+ * group — "show me only this kind of request".
+ */
+export type DurationFilter = 'any' | 'slow100' | 'slow500' | 'nplus' | 'tests';
 
 export interface FilterState {
   query: string;
@@ -63,6 +67,8 @@ function matches(row: RequestRow, filter: FilterState): boolean {
       return row.durationMs >= 500;
     case 'nplus':
       return row.nPlusOne;
+    case 'tests':
+      return row.test !== null;
     default:
       return true;
   }

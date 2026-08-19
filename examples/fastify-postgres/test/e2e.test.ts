@@ -266,6 +266,35 @@ describe('demo application', () => {
     expect(flaky.some((item) => !item.nPlusOne)).toBe(true);
   });
 
+  it('remembers which test issued a request, and which test reproduces a crash', async () => {
+    // What a test harness sets on every request it makes. Header values are
+    // latin1, and `›` is not, so the harness percent-encodes it.
+    const testName = 'orders.spec.ts:42 › creates an order';
+    const header = { 'x-loupe-test': encodeURIComponent(testName) };
+    await fetch(`${base}/api/order`, { headers: header });
+    await fetch(`${base}/api/boom`, { headers: header });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const list = (await (await fetch(`${base}/_loupe/api/requests`)).json()) as {
+      requests: Array<Row & { test: string | null; httpCount: number }>;
+    };
+    const fromTest = list.requests.filter((item) => item.test === testName);
+    expect(fromTest.length).toBeGreaterThanOrEqual(2);
+
+    // Ordinary traffic stays unmarked — the marker means something.
+    expect(list.requests.some((item) => item.test === null)).toBe(true);
+
+    const detail = (await (
+      await fetch(`${base}/_loupe/api/requests/${fromTest[0]?.id}`)
+    ).json()) as { test: string | null };
+    expect(detail.test).toBe(testName);
+
+    const exceptions = (await (await fetch(`${base}/_loupe/api/exceptions`)).json()) as {
+      groups: Array<{ type: string; test: string | null }>;
+    };
+    expect(exceptions.groups[0]?.test).toBe(testName);
+  });
+
   it('groups the exception and shows where it came from', async () => {
     await fetch(`${base}/api/boom`);
     await new Promise((resolve) => setTimeout(resolve, 300));

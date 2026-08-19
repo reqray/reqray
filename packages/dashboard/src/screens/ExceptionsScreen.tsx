@@ -70,15 +70,22 @@ function Group({
               </div>
             ))}
           </div>
-          {firstRequest ? (
+          {firstRequest || group.test ? (
             <div className="exc-actions">
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => onOpenRequest(firstRequest)}
-              >
-                view request #{firstRequest}
-              </button>
+              {firstRequest ? (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => onOpenRequest(firstRequest)}
+                >
+                  view request #{firstRequest}
+                </button>
+              ) : null}
+              {group.test ? (
+                <span className="test-badge" title="a test that reproduces this">
+                  reproduced by {group.test}
+                </span>
+              ) : null}
             </div>
           ) : null}
         </div>

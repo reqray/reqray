@@ -29,6 +29,7 @@ function record(id: string): RecordedRequest {
     error: null,
     droppedSpans: 0,
     droppedLogs: 0,
+    test: null,
   };
 }
 

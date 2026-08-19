@@ -456,6 +456,13 @@ export function DetailScreen({
         )}
       </header>
 
+      {detail.test ? (
+        <div className="test-strip">
+          <span className="test-badge">TEST</span>
+          <span className="s-fg2">issued by {detail.test}</span>
+        </div>
+      ) : null}
+
       <div className="detail-body">
         <Waterfall detail={detail} />
         <Callout detail={detail} />

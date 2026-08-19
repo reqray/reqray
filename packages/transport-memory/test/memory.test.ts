@@ -21,6 +21,7 @@ function request(id: string, startedAt = 1_000): RecordedRequest {
     error: null,
     droppedSpans: 0,
     droppedLogs: 0,
+    test: null,
   };
 }
 

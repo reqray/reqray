@@ -271,4 +271,12 @@ export interface RecordedRequest {
   readonly droppedSpans: number;
   /** How many log lines had to be dropped because of the per-request cap. */
   readonly droppedLogs: number;
+  /**
+   * The test that issued this request, when a test harness said so through
+   * the `x-loupe-test` header — e.g. `orders.spec.ts:42 › creates an order`.
+   *
+   * `null` for ordinary traffic. Knowing a request came from a test is what
+   * turns "this is slow" into "this test reproduces it".
+   */
+  readonly test: string | null;
 }

@@ -67,6 +67,7 @@ function recordWith(span: Partial<Record<string, unknown>>): RecordedRequest {
     error: null,
     droppedSpans: 0,
     droppedLogs: 0,
+    test: null,
   };
 }
 

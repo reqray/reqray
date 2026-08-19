@@ -113,6 +113,38 @@ function bracketLogs(scope: RequestScope, status: number, durationMs: number): L
   ];
 }
 
+/** How a test harness names the test behind a request. */
+export const TEST_HEADER = 'x-loupe-test';
+
+/** The maximum length of a test name kept in a record. */
+const MAX_TEST_NAME = 200;
+
+/**
+ * The test that issued the request, from the header the harness sets.
+ *
+ * Read from the raw headers rather than the redacted copy: masking may have
+ * replaced the value, and this one is a test name, not a secret.
+ *
+ * Header values are latin1, and test names are full of characters that are
+ * not — Vitest and Jest separate suite from case with `›`. A percent-encoded
+ * value is therefore decoded; anything that fails to decode is kept as sent,
+ * because a slightly odd name is better than no name.
+ */
+function testOf(outcome: RequestOutcome): string | null {
+  const raw = outcome.requestHeaders?.[TEST_HEADER];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== 'string') return null;
+  let trimmed = value.trim();
+  if (trimmed.includes('%')) {
+    try {
+      trimmed = decodeURIComponent(trimmed);
+    } catch {
+      // Not percent-encoded after all — a literal `%` in the name.
+    }
+  }
+  return trimmed ? trimmed.slice(0, MAX_TEST_NAME) : null;
+}
+
 function buildRecord(
   scope: RequestScope,
   outcome: RequestOutcome,
@@ -140,6 +172,7 @@ function buildRecord(
     error: toSpanError(outcome.error),
     droppedSpans: scope.droppedSpans,
     droppedLogs: scope.droppedLogs,
+    test: testOf(outcome),
   };
 }
 

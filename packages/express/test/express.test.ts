@@ -238,4 +238,45 @@ describe('Express adapter', () => {
     expect(scopeSeen).toBeUndefined();
     expect(store.list()).toEqual([]);
   });
+
+  describe('test provenance', () => {
+    it('records the test a request came from', async () => {
+      const { app, store } = harness();
+      const base = await serve(app);
+
+      await fetch(`${base}/orders`, { headers: { 'x-loupe-test': 'orders.spec.ts:42' } });
+
+      expect((await waitForRecord(store)).test).toBe('orders.spec.ts:42');
+    });
+
+    it('decodes a percent-encoded name, since header values are latin1', async () => {
+      const { app, store } = harness();
+      const base = await serve(app);
+      const name = 'orders.spec.ts:42 \u203a creates an order';
+
+      await fetch(`${base}/orders`, {
+        headers: { 'x-loupe-test': encodeURIComponent(name) },
+      });
+
+      expect((await waitForRecord(store)).test).toBe(name);
+    });
+
+    it('keeps a name that only looks encoded', async () => {
+      const { app, store } = harness();
+      const base = await serve(app);
+
+      await fetch(`${base}/orders`, { headers: { 'x-loupe-test': '50% of the time' } });
+
+      expect((await waitForRecord(store)).test).toBe('50% of the time');
+    });
+
+    it('ordinary traffic carries no test', async () => {
+      const { app, store } = harness();
+      const base = await serve(app);
+
+      await fetch(`${base}/orders`);
+
+      expect((await waitForRecord(store)).test).toBeNull();
+    });
+  });
 });

@@ -256,6 +256,7 @@ function suite(name: string, backend: Backend, enabled: boolean): void {
         error: null,
         droppedSpans: 0,
         droppedLogs: 0,
+        test: null,
       } satisfies RecordedRequest;
 
       const result = await runExplain(record, span?.id ?? -1);

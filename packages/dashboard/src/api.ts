@@ -15,12 +15,16 @@ export interface RequestRow {
   durationMs: number;
   startedAt: number;
   sqlCount: number;
+  /** Outgoing HTTP calls made while handling the request. */
+  httpCount: number;
   nPlusOne: boolean;
   /** How many findings the detectors produced. */
   findingCount: number;
   hasError: boolean;
   /** Held past its turn in the ring buffer, and exempt from filters. */
   pinned: boolean;
+  /** The test that issued the request, or `null` for ordinary traffic. */
+  test: string | null;
 }
 
 export interface RequestSummary {
@@ -129,12 +133,16 @@ export interface ExceptionGroup {
   requestIds: string[];
   frames: ExceptionFrame[];
   buckets: number[];
+  /** A test that reproduced it — the one to run again. */
+  test: string | null;
 }
 
 export interface ReplayMetrics {
   status: number;
   durationMs: number;
   sqlCount: number;
+  /** Outgoing HTTP calls made while handling the request. */
+  httpCount: number;
   nPlusOne: boolean;
   bytes: number | null;
   etag: string | null;

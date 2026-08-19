@@ -69,12 +69,16 @@ export interface RequestRow {
   readonly durationMs: number;
   readonly startedAt: number;
   readonly sqlCount: number;
+  /** Outgoing HTTP calls — what "slow, and it called someone" is made of. */
+  readonly httpCount: number;
   readonly nPlusOne: boolean;
   /** How many findings the detectors produced. */
   readonly findingCount: number;
   readonly hasError: boolean;
   /** Held past its turn in the ring buffer, and exempt from filters. */
   readonly pinned: boolean;
+  /** The test that issued the request, or `null` for ordinary traffic. */
+  readonly test: string | null;
 }
 
 /**
@@ -86,8 +90,10 @@ export interface RequestRow {
  */
 export function toRow(request: RecordedRequest, pinned = false): RequestRow {
   let sqlCount = 0;
+  let httpCount = 0;
   for (const span of request.spans) {
     if (span.kind === 'db') sqlCount++;
+    else if (span.kind === 'http') httpCount++;
   }
 
   return {
@@ -99,10 +105,12 @@ export function toRow(request: RecordedRequest, pinned = false): RequestRow {
     durationMs: request.durationMs,
     startedAt: request.startedAt,
     sqlCount,
+    httpCount,
     nPlusOne: request.findings.some((finding) => finding.detector === 'n_plus_one'),
     findingCount: request.findings.length,
     hasError: request.error !== null || request.status >= 500,
     pinned,
+    test: request.test,
   };
 }
 
