@@ -17,6 +17,7 @@ import { groupExceptions } from './exceptions.js';
 import { ExplainError, runExplain } from './explain.js';
 import { filterRequests, type RequestFilter, summarize } from './filters.js';
 import { type ReplayInput, runReplay } from './replay.js';
+import { normalizeRoute, routeStats } from './routes.js';
 
 /** Where the panel gets its data. Implemented by the transport store. */
 export interface PanelSource {
@@ -65,6 +66,13 @@ export interface RequestRow {
   readonly method: string;
   readonly path: string;
   readonly query: string | null;
+  /**
+   * The path with its variable segments collapsed (`/api/orders/:id`).
+   *
+   * Normalized here rather than in the panel: the rule is tested on this side
+   * and the browser bundle must not carry a second copy of it that can drift.
+   */
+  readonly route: string;
   readonly status: number;
   readonly durationMs: number;
   readonly startedAt: number;
@@ -101,6 +109,7 @@ export function toRow(request: RecordedRequest, pinned = false): RequestRow {
     method: request.method,
     path: request.path,
     query: request.query,
+    route: normalizeRoute(request.path),
     status: request.status,
     durationMs: request.durationMs,
     startedAt: request.startedAt,
@@ -309,6 +318,11 @@ export function createPanelHandler(init: PanelHandlerInit): PanelHandler | null 
         requests: shown.map((record) => toRow(record, pinned.has(record.id))),
         summary: summarize(all, shown, options.sampling.slowMs || 500),
       });
+      return true;
+    }
+
+    if (route === '/api/routes' && method === 'GET') {
+      sendJson(response, 200, routeStats(source.list()));
       return true;
     }
 

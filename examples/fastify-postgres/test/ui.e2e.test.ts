@@ -368,6 +368,46 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     }
   });
 
+  it('the routes screen ranks endpoints and filters the list', async () => {
+    await page.evaluate(() => {
+      const nav = [...document.querySelectorAll('.nav button')];
+      (nav.find((button) => button.textContent === 'Routes') as HTMLButtonElement)?.click();
+    });
+    await page.waitForSelector('.routes-row');
+
+    const head = await page.$eval('.routes-head', (node) => node.textContent ?? '');
+    expect(head).toContain('routes');
+    expect(head).toContain('samples');
+
+    // Variable segments collapse: /api/external/inventory/3 and /…/153 are
+    // one route, not two.
+    const routes = await page.$$eval('.routes-row .ellipsis', (nodes) =>
+      nodes.map((node) => node.textContent ?? ''),
+    );
+    expect(routes.some((route) => route.includes('/api/orders'))).toBe(true);
+    expect(routes.every((route) => !/\/\d+$/.test(route.trim()))).toBe(true);
+
+    // Sorting by calls puts the most-hit route on top.
+    await page.evaluate(() => {
+      const heads = [...document.querySelectorAll('.routes-header .sort-head')];
+      (heads.find((node) => node.textContent?.startsWith('CALLS')) as HTMLButtonElement)?.click();
+    });
+    await page.waitForFunction(
+      () => document.querySelector('.routes-header .sort-head[aria-pressed="true"]') !== null,
+    );
+
+    // Clicking a row filters the request list down to that route.
+    await (await page.$('.routes-row'))?.click();
+    await page.waitForSelector('.route-filter');
+    const paths = await page.$$eval('.row .ellipsis', (nodes) =>
+      nodes.map((node) => node.textContent ?? ''),
+    );
+    expect(new Set(paths.map((path) => path.replace(/\d+/g, ':id'))).size).toBe(1);
+
+    await (await page.$('.route-filter'))?.click();
+    await page.waitForFunction(() => document.querySelector('.route-filter') === null);
+  });
+
   it('highlight rules tint rows, and switching one off untints them', async () => {
     // /api/boom is a 500, which the "status ≥ 500" rule owns by default.
     await page.waitForSelector('.row[data-rule="server_error"]');

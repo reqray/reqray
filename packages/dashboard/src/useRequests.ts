@@ -21,6 +21,8 @@ export interface FilterState {
   methods: string[];
   statusClasses: number[];
   duration: DurationFilter;
+  /** Set by picking a row on the Routes screen; cleared from the status bar. */
+  route: { method: string; route: string } | null;
 }
 
 export const EMPTY_FILTER: FilterState = {
@@ -28,6 +30,7 @@ export const EMPTY_FILTER: FilterState = {
   methods: [],
   statusClasses: [],
   duration: 'any',
+  route: null,
 };
 
 export interface RequestsState {
@@ -51,6 +54,9 @@ export interface RequestsState {
 }
 
 function matches(row: RequestRow, filter: FilterState): boolean {
+  if (filter.route && (row.method !== filter.route.method || row.route !== filter.route.route)) {
+    return false;
+  }
   const needle = filter.query.trim().toLowerCase();
   if (needle) {
     const haystack = `${row.method} ${row.path} ${row.query ?? ''} ${row.status}`.toLowerCase();

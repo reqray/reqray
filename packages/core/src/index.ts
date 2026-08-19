@@ -113,6 +113,13 @@ export {
   runReplay,
 } from './panel/replay.js';
 export {
+  normalizeRoute,
+  percentile,
+  type RouteStats,
+  type RoutesReport,
+  routeStats,
+} from './panel/routes.js';
+export {
   assertPanelAllowed,
   isPanelRequestAllowed,
   type PanelGate,

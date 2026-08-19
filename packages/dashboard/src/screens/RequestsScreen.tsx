@@ -483,6 +483,16 @@ export function RequestsScreen({
         <span>n+1: {count(summary.withFindings)}</span>
         <span>pinned: {count(pinnedCount)}</span>
         <span className="spacer" />
+        {filter.route ? (
+          <button
+            type="button"
+            className="route-filter"
+            title="clear the route filter"
+            onClick={() => patch({ route: null })}
+          >
+            route filter: {filter.route.method} {filter.route.route} ✕
+          </button>
+        ) : null}
         <span>
           ring buffer {count(rows.length)}
           {pinnedCount > 0 ? ' · pinned entries exempt' : ''}

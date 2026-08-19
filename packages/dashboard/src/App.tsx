@@ -7,22 +7,14 @@ import { CompareScreen } from './screens/CompareScreen';
 import { DetailScreen } from './screens/DetailScreen';
 import { ExceptionsScreen } from './screens/ExceptionsScreen';
 import { RequestsScreen } from './screens/RequestsScreen';
-import { useRequests } from './useRequests';
+import { RoutesScreen } from './screens/RoutesScreen';
+import { EMPTY_FILTER, useRequests } from './useRequests';
 
 type Theme = 'dark' | 'light';
 
-/**
- * `#l/routes` is part of the hash contract already, but the screen it names
- * arrives with the Routes stage. Until then the link lands on the list rather
- * than on nothing, and the hash is rewritten to say so.
- */
-function landable(screen: Screen): Screen {
-  return screen === 'routes' ? 'requests' : screen;
-}
-
 export function App() {
   const initial = parseHash(window.location.hash);
-  const [screen, setScreen] = useState<Screen>(landable(initial.screen));
+  const [screen, setScreen] = useState<Screen>(initial.screen);
   const [selected, setSelected] = useState<string | null>(initial.selected);
   const [compare, setCompare] = useState<Route['compare']>(initial.compare);
   const [theme, setTheme] = useState<Theme>('dark');
@@ -52,7 +44,7 @@ export function App() {
   useEffect(() => {
     const onHashChange = () => {
       const next = parseHash(window.location.hash);
-      setScreen(landable(next.screen));
+      setScreen(next.screen);
       setCompare(next.compare);
       // The list keeps its highlight when navigating back to it.
       if (next.selected !== null) setSelected(next.selected);
@@ -130,10 +122,17 @@ export function App() {
             type="button"
             // `Requests` stays active for the detail screen too — it is the
             // same place, one level deeper.
-            aria-current={screen !== 'exceptions'}
+            aria-current={screen !== 'exceptions' && screen !== 'routes'}
             onClick={() => setScreen('requests')}
           >
             Requests
+          </button>
+          <button
+            type="button"
+            aria-current={screen === 'routes'}
+            onClick={() => setScreen('routes')}
+          >
+            Routes
           </button>
           <button
             type="button"
@@ -183,6 +182,16 @@ export function App() {
       <main className="screen">
         {screen === 'exceptions' ? (
           <ExceptionsScreen onOpenRequest={openRequest} />
+        ) : screen === 'routes' ? (
+          <RoutesScreen
+            onPickRoute={(route) => {
+              // Picking a route is a fresh question: the other filters, which
+              // were asked about a different set of rows, are cleared.
+              requests.setFilter({ ...EMPTY_FILTER, route });
+              requests.setWindow(null);
+              setScreen('requests');
+            }}
+          />
         ) : screen === 'compare' && compare ? (
           <CompareScreen
             a={compare.a}

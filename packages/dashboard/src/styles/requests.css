@@ -233,8 +233,9 @@
   color: var(--fg3);
 }
 
-/* Header cells are buttons now; strip the chrome so they still read as labels. */
-.row-head .sort-head {
+/* Header cells are buttons; strip the chrome so they still read as labels.
+   Shared with the Routes table, which sorts the same way. */
+.sort-head {
   background: none;
   border: 0;
   padding: 0;
@@ -247,12 +248,12 @@
   transition: color var(--t-fast) ease-out;
 }
 
-.row-head .sort-head.cell-right {
+.sort-head.cell-right {
   text-align: right;
 }
 
-.row-head .sort-head:hover,
-.row-head .sort-head[aria-pressed="true"] {
+.sort-head:hover,
+.sort-head[aria-pressed="true"] {
   color: var(--fg);
 }
 
@@ -522,4 +523,14 @@
   font-family: var(--mono);
   font-size: 13px;
   color: var(--fg3);
+}
+
+/* Set from the Routes screen; clicking it takes the filter back off. */
+.route-filter {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--acc);
+  cursor: pointer;
 }

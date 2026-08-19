@@ -11,6 +11,8 @@ export interface RequestRow {
   method: string;
   path: string;
   query: string | null;
+  /** The path with variable segments collapsed: `/api/orders/:id`. */
+  route: string;
   status: number;
   durationMs: number;
   startedAt: number;
@@ -222,6 +224,25 @@ export async function fetchRequest(id: string, signal?: AbortSignal): Promise<Re
 export async function fetchExceptions(signal?: AbortSignal): Promise<ExceptionGroup[]> {
   const payload = await getJson<{ groups: ExceptionGroup[] }>(`${apiBase()}/exceptions`, signal);
   return payload.groups;
+}
+
+export interface RouteStats {
+  method: string;
+  route: string;
+  calls: number;
+  rps: number;
+  p50: number;
+  p95: number;
+  p99: number;
+  errorRate: number;
+  sqlAvg: number;
+  timeShare: number;
+}
+
+export async function fetchRoutes(
+  signal?: AbortSignal,
+): Promise<{ routes: RouteStats[]; samples: number; windowMs: number }> {
+  return getJson(`${apiBase()}/routes`, signal);
 }
 
 export async function clearRequests(): Promise<void> {
