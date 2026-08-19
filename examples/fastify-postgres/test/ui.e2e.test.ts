@@ -182,6 +182,144 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     );
   });
 
+  /** Enough traffic that the list scrolls — the banner needs somewhere to hide. */
+  async function burst(times: number): Promise<void> {
+    const before = await page.$$eval('.row', (nodes) => nodes.length);
+    for (let i = 0; i < times; i++) await fetch(`${base}/api/order`);
+    await page.waitForFunction(
+      (previous: number) => document.querySelectorAll('.row').length > previous + 1,
+      {},
+      before,
+    );
+  }
+
+  /** The selected row's text, once it settles on something other than `from`. */
+  async function selectionAfterChange(from: string | null): Promise<string> {
+    await page.waitForFunction(
+      (previous: string | null) =>
+        (document.querySelector('.row[data-selected="true"]')?.textContent ?? null) !== previous,
+      {},
+      from,
+    );
+    return page.$eval('.row[data-selected="true"]', (node) => node.textContent ?? '');
+  }
+
+  it('j and k move the selection, enter opens it', async () => {
+    await page.waitForSelector('.row');
+
+    await page.keyboard.press('j');
+    const first = await selectionAfterChange(null);
+    await page.keyboard.press('j');
+    const second = await selectionAfterChange(first);
+    expect(second).not.toBe(first);
+
+    // `k` goes back to where `j` started.
+    await page.keyboard.press('k');
+    expect(await selectionAfterChange(second)).toBe(first);
+
+    await page.keyboard.press('Enter');
+    await page.waitForSelector('.waterfall');
+    await page.waitForFunction(() => location.hash.startsWith('#l/req/'));
+
+    // esc leaves the detail without touching the mouse, and the row it opened
+    // stays highlighted in the list.
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.row[data-selected="true"]');
+  });
+
+  it('shortcuts are inert while the filter field has focus', async () => {
+    const before = await page.$eval('.row[data-selected="true"]', (node) => node.textContent ?? '');
+
+    try {
+      await page.keyboard.press('/');
+      await page.waitForFunction(() => document.activeElement?.tagName === 'INPUT');
+
+      // In the field, `j` and `k` are letters: they land in the filter rather
+      // than walking the list.
+      await page.keyboard.type('jk');
+      expect(await page.$eval('.search input', (node) => (node as HTMLInputElement).value)).toBe(
+        'jk',
+      );
+    } finally {
+      // Always leave the filter empty: the whole suite shares this page, and a
+      // stray filter would blank the list for every test after this one.
+      // Clearing the way a person does — assigning .value slips past React.
+      await page.keyboard.press('Backspace');
+      await page.keyboard.press('Backspace');
+      await page.waitForFunction(() => document.querySelectorAll('.row').length > 1);
+    }
+
+    // With the rows back, the selection is where it was: the two keystrokes
+    // never reached the list.
+    expect(await page.$eval('.row[data-selected="true"]', (node) => node.textContent ?? '')).toBe(
+      before,
+    );
+
+    // esc hands the keyboard back instead of navigating.
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.activeElement?.tagName !== 'INPUT');
+  });
+
+  it('the ? panel lists the shortcuts and esc closes it', async () => {
+    await page.keyboard.press('?');
+    await page.waitForSelector('.keys-panel');
+    const text = await page.$eval('.keys-panel', (node) => node.textContent ?? '');
+
+    expect(text).toContain('j / k');
+    expect(text).toContain('pause or resume');
+
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.querySelector('.keys-panel') === null);
+  });
+
+  it('the banner counts arrivals while scrolled away and takes you back', async () => {
+    await burst(40);
+    await page.$eval('.rows', (node) => {
+      node.scrollTop = 400;
+      node.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    await fetch(`${base}/api/order`);
+    await page.waitForSelector('.new-banner');
+    expect(await page.$eval('.new-banner', (node) => node.textContent ?? '')).toContain('new');
+
+    await (await page.$('.new-banner'))?.click();
+    await page.waitForFunction(() => (document.querySelector('.rows')?.scrollTop ?? 1) === 0);
+    expect(await page.$('.new-banner')).toBeNull();
+  });
+
+  it('dragging the timeline narrows the list, reset restores it', async () => {
+    const before = await page.$$eval('.row', (nodes) => nodes.length);
+    const chart = await page.$('.timeline-chart');
+    const box = await chart?.boundingBox();
+    if (!box) throw new Error('the timeline did not render');
+
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + 2, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.4, y, { steps: 8 });
+    await page.mouse.up();
+
+    await page.waitForFunction(
+      (previous: number) => document.querySelectorAll('.row').length < previous,
+      {},
+      before,
+    );
+    const narrowed = await page.$$eval('.row', (nodes) => nodes.length);
+    expect(narrowed).toBeGreaterThan(0);
+    // The label switches from the full range to the window it selected.
+    expect(await page.$eval('.timeline-label', (node) => node.textContent ?? '')).toContain(
+      'window',
+    );
+
+    await (await page.$('.tl-reset'))?.click();
+    await page.waitForFunction(
+      (previous: number) => document.querySelectorAll('.row').length === previous,
+      {},
+      before,
+    );
+  });
+
   it('the new-row flash plays once and does not return with filters', async () => {
     const before = await page.$$eval('.row', (nodes) => nodes.length);
     await fetch(`${base}/api/order`);
@@ -270,7 +408,7 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
   it('the permanent link opens the same detail in a new tab', async () => {
     // The previous test left the detail open — its URL is the permanent link.
     const link = page.url();
-    expect(link).toContain('#/req/');
+    expect(link).toContain('#l/req/');
 
     const fresh = await browser.newPage();
     try {
@@ -278,6 +416,24 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
       await fresh.waitForSelector('.callout');
       const callout = await fresh.$eval('.callout', (node) => node.textContent ?? '');
       expect(callout).toContain('in a loop');
+    } finally {
+      await fresh.close();
+    }
+  });
+
+  it('links written in the original hash scheme still open', async () => {
+    // Those links are already in chat threads and issue trackers.
+    const id = page.url().split('#l/req/')[1];
+    const fresh = await browser.newPage();
+    try {
+      await fresh.goto(`${base}/_loupe/#/req/${id}`, { waitUntil: 'domcontentloaded' });
+      await fresh.waitForSelector('.callout');
+
+      expect(await fresh.$eval('.callout', (node) => node.textContent ?? '')).toContain(
+        'in a loop',
+      );
+      // …and the panel rewrites them to the scheme it speaks now.
+      expect(fresh.url()).toContain('#l/req/');
     } finally {
       await fresh.close();
     }

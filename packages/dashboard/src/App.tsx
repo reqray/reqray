@@ -1,64 +1,34 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchMeta, type PanelMeta } from './api';
+import { KeyboardPanel } from './components/KeyboardPanel';
+import { isTypingTarget } from './keyboard';
+import { hashFor, parseHash, type Route, type Screen } from './routing';
 import { CompareScreen } from './screens/CompareScreen';
 import { DetailScreen } from './screens/DetailScreen';
 import { ExceptionsScreen } from './screens/ExceptionsScreen';
 import { RequestsScreen } from './screens/RequestsScreen';
 import { useRequests } from './useRequests';
 
-type Screen = 'requests' | 'detail' | 'exceptions' | 'compare';
 type Theme = 'dark' | 'light';
 
-interface Route {
-  readonly screen: Screen;
-  readonly selected: string | null;
-  /** The pair on the compare screen; `b` is `null` while it is being picked. */
-  readonly compare: { a: string; b: string | null } | null;
-}
-
 /**
- * The screen lives in the URL hash, so a trace has a permanent link:
- * `#/req/<id>` opens the same detail for whoever it is sent to (while the
- * record is still in the ring buffer — an evicted one gets an honest screen),
- * and `#/compare/<a>/<b>` shares a whole comparison.
+ * `#l/routes` is part of the hash contract already, but the screen it names
+ * arrives with the Routes stage. Until then the link lands on the list rather
+ * than on nothing, and the hash is rewritten to say so.
  */
-function parseHash(hash: string): Route {
-  const path = hash.replace(/^#\/?/, '');
-  if (path === 'exceptions') return { screen: 'exceptions', selected: null, compare: null };
-  if (path.startsWith('req/')) {
-    return {
-      screen: 'detail',
-      selected: decodeURIComponent(path.slice('req/'.length)),
-      compare: null,
-    };
-  }
-  if (path.startsWith('compare/')) {
-    const [a, b] = path.slice('compare/'.length).split('/').map(decodeURIComponent);
-    if (a) return { screen: 'compare', selected: a, compare: { a, b: b || null } };
-  }
-  return { screen: 'requests', selected: null, compare: null };
-}
-
-function hashFor(route: Route): string {
-  if (route.screen === 'exceptions') return '#/exceptions';
-  if (route.screen === 'detail' && route.selected) {
-    return `#/req/${encodeURIComponent(route.selected)}`;
-  }
-  if (route.screen === 'compare' && route.compare) {
-    const tail = route.compare.b ? `/${encodeURIComponent(route.compare.b)}` : '';
-    return `#/compare/${encodeURIComponent(route.compare.a)}${tail}`;
-  }
-  return '#/';
+function landable(screen: Screen): Screen {
+  return screen === 'routes' ? 'requests' : screen;
 }
 
 export function App() {
   const initial = parseHash(window.location.hash);
-  const [screen, setScreen] = useState<Screen>(initial.screen);
+  const [screen, setScreen] = useState<Screen>(landable(initial.screen));
   const [selected, setSelected] = useState<string | null>(initial.selected);
   const [compare, setCompare] = useState<Route['compare']>(initial.compare);
   const [theme, setTheme] = useState<Theme>('dark');
   const [live, setLive] = useState(true);
   const [meta, setMeta] = useState<PanelMeta | null>(null);
+  const [keysOpen, setKeysOpen] = useState(false);
 
   // The feed only runs on the list screen: nothing behind the detail screen
   // would show a new row anyway.
@@ -80,7 +50,7 @@ export function App() {
   useEffect(() => {
     const onHashChange = () => {
       const next = parseHash(window.location.hash);
-      setScreen(next.screen);
+      setScreen(landable(next.screen));
       setCompare(next.compare);
       // The list keeps its highlight when navigating back to it.
       if (next.selected !== null) setSelected(next.selected);
@@ -89,11 +59,42 @@ export function App() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  // The state drives the hash — that is what makes the link copyable.
+  // The state drives the hash — that is what makes the link copyable. A real
+  // navigation (rather than replaceState) is deliberate: back and forward are
+  // how people leave a request they opened, and there are only a handful of
+  // screen changes, so history stays readable.
   useEffect(() => {
     const wanted = hashFor({ screen, selected, compare });
-    if ((window.location.hash || '#/') !== wanted) window.location.hash = wanted;
+    if (window.location.hash !== wanted) window.location.hash = wanted;
   }, [screen, selected, compare]);
+
+  // Shortcuts that belong to the whole panel; the list owns j/k/↵ and `/`.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) {
+        // Even here `esc` has a job: it hands focus back to the shortcuts.
+        if (event.key === 'Escape') (event.target as HTMLElement).blur();
+        return;
+      }
+      if (event.key === '?') {
+        event.preventDefault();
+        setKeysOpen((open) => !open);
+        return;
+      }
+      if (event.key === ' ') {
+        event.preventDefault();
+        setLive((current) => !current);
+        return;
+      }
+      if (event.key === 'Escape') {
+        // Topmost overlay first, then out of the screen you are in.
+        if (keysOpen) setKeysOpen(false);
+        else if (screen !== 'requests') setScreen('requests');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [keysOpen, screen]);
 
   const openRequest = useCallback((id: string) => {
     setSelected(id);
@@ -158,6 +159,15 @@ export function App() {
             light
           </button>
         </div>
+
+        <button
+          type="button"
+          className="btn-secondary keys-open"
+          title="keyboard shortcuts"
+          onClick={() => setKeysOpen(true)}
+        >
+          ?
+        </button>
       </header>
 
       <main className="screen">
@@ -178,8 +188,15 @@ export function App() {
             onCompare={openCompare}
           />
         ) : (
-          <RequestsScreen state={requests} selected={selected} onOpen={openRequest} />
+          <RequestsScreen
+            state={requests}
+            selected={selected}
+            onOpen={openRequest}
+            onSelect={setSelected}
+          />
         )}
+
+        {keysOpen ? <KeyboardPanel onClose={() => setKeysOpen(false)} /> : null}
       </main>
     </div>
   );

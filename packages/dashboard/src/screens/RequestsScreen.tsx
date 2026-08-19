@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RequestRow } from '../api';
+import { TimelineScrubber } from '../components/TimelineScrubber';
 import {
   clock,
   count,
@@ -9,6 +10,7 @@ import {
   methodTone,
   statusTone,
 } from '../format';
+import { isTypingTarget, nextIndex, scrollTopFor } from '../keyboard';
 import { nextSort, type SortKey } from '../sort';
 import type { DurationFilter, FilterState, RequestsState } from '../useRequests';
 
@@ -135,13 +137,21 @@ export function RequestsScreen({
   state,
   selected,
   onOpen,
+  onSelect,
 }: {
   state: RequestsState;
   selected: string | null;
   onOpen: (id: string) => void;
+  /** Moves the highlight without leaving the list — what `j`/`k` do. */
+  onSelect: (id: string) => void;
 }) {
   const { filter, setFilter, shown, rows, summary, oldestAt } = state;
   const searchRef = useRef<HTMLInputElement>(null);
+  const rowsRef = useRef<HTMLDivElement>(null);
+  // Arrivals the reader has not seen because they are scrolled away from the
+  // top. Prepending rows under the eye would move what they are reading.
+  const [pending, setPending] = useState(0);
+  const scrolled = useRef(false);
   // When each id was first seen. Written during render on purpose: a row must
   // count as fresh on its very first paint, before any effect has run. The
   // write is idempotent per id, so re-renders are safe.
@@ -166,15 +176,59 @@ export function RequestsScreen({
     }
   }, [rows]);
 
+  // Count arrivals while the reader is scrolled away, so the banner can offer
+  // the trip back up instead of moving the ground under them.
+  const topId = useRef<string | null>(null);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== '/' || event.target !== document.body) return;
-      event.preventDefault();
-      searchRef.current?.focus();
+    const top = rows[0]?.id ?? null;
+    const previous = topId.current;
+    topId.current = top;
+    if (previous === null || top === previous || !scrolled.current) return;
+    const arrived = rows.findIndex((row) => row.id === previous);
+    setPending((current) => current + (arrived > 0 ? arrived : 1));
+  }, [rows]);
+
+  useEffect(() => {
+    const scrollToRow = (index: number) => {
+      const container = rowsRef.current;
+      if (!container) return;
+      const rowHeight = container.querySelector('.row')?.getBoundingClientRect().height ?? 0;
+      const top = scrollTopFor({
+        scrollTop: container.scrollTop,
+        viewportHeight: container.clientHeight,
+        rowHeight,
+        index,
+      });
+      if (top !== null) container.scrollTop = top;
     };
+
+    const onKey = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+
+      if (event.key === '/') {
+        event.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      if (event.key === 'j' || event.key === 'k') {
+        event.preventDefault();
+        const current = shown.findIndex((row) => row.id === selected);
+        const index = nextIndex(current, event.key === 'j' ? 1 : -1, shown.length);
+        const row = shown[index];
+        if (!row) return;
+        onSelect(row.id);
+        scrollToRow(index);
+        return;
+      }
+      if (event.key === 'Enter' && selected) {
+        event.preventDefault();
+        onOpen(selected);
+      }
+    };
+
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [shown, selected, onOpen, onSelect]);
 
   const patch = (next: Partial<FilterState>) => setFilter({ ...filter, ...next });
 
@@ -182,6 +236,8 @@ export function RequestsScreen({
 
   return (
     <div className="requests">
+      <TimelineScrubber rows={rows} win={state.win} onWindow={state.setWindow} />
+
       <div className="filters">
         <label className="search">
           <span className="search-hint">/</span>
@@ -263,7 +319,14 @@ export function RequestsScreen({
         )}
       </div>
 
-      <div className="rows">
+      <div
+        className="rows"
+        ref={rowsRef}
+        onScroll={(event) => {
+          scrolled.current = event.currentTarget.scrollTop > 8;
+          if (!scrolled.current) setPending(0);
+        }}
+      >
         {shown.map((row) => (
           <Row
             key={row.id}
@@ -274,6 +337,21 @@ export function RequestsScreen({
           />
         ))}
       </div>
+
+      {/* Outside the scroller on purpose: it is an offer to travel, and it has
+          to stay put while the rows it counts move. */}
+      {pending > 0 ? (
+        <button
+          type="button"
+          className="new-banner"
+          onClick={() => {
+            if (rowsRef.current) rowsRef.current.scrollTop = 0;
+            setPending(0);
+          }}
+        >
+          ↑ {count(pending)} new {pending === 1 ? 'request' : 'requests'}
+        </button>
+      ) : null}
 
       <div className="statusbar">
         <span>

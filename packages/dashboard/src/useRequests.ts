@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clearRequests, fetchRequests, type RequestRow, subscribeToRequests } from './api';
 import { DEFAULT_SORT, type SortState, sortRows } from './sort';
+import { inWindow, type TimeWindow } from './timeline';
 
 /** Duration chips are radio-like: exactly one is active. */
 export type DurationFilter = 'any' | 'slow100' | 'slow500' | 'nplus';
@@ -26,10 +27,13 @@ export interface RequestsState {
   oldestAt: number | null;
   filter: FilterState;
   sort: SortState;
+  /** The scrubber's selection; `null` is the whole recorded range. */
+  win: TimeWindow | null;
   error: string | null;
   loading: boolean;
   setFilter: (next: FilterState) => void;
   setSort: (next: SortState) => void;
+  setWindow: (next: TimeWindow | null) => void;
   clear: () => Promise<void>;
   reload: () => void;
 }
@@ -70,6 +74,7 @@ export function useRequests(active: boolean, live: boolean): RequestsState {
   const [rows, setRows] = useState<RequestRow[]>([]);
   const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER);
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
+  const [win, setWindow] = useState<TimeWindow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
@@ -109,10 +114,10 @@ export function useRequests(active: boolean, live: boolean): RequestsState {
   const shown = useMemo(
     () =>
       sortRows(
-        rows.filter((row) => matches(row, filter)),
+        rows.filter((row) => inWindow(row.startedAt, win) && matches(row, filter)),
         sort,
       ),
-    [rows, filter, sort],
+    [rows, filter, sort, win],
   );
 
   const summary = useMemo(() => {
@@ -143,10 +148,12 @@ export function useRequests(active: boolean, live: boolean): RequestsState {
     oldestAt,
     filter,
     sort,
+    win,
     error,
     loading,
     setFilter,
     setSort,
+    setWindow,
     clear,
     reload,
   };

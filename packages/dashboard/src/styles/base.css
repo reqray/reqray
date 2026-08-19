@@ -380,3 +380,49 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Keyboard panel ──────────────────────────────────────────────────── */
+
+.keys-open {
+  flex: none;
+  padding: 5px 10px;
+}
+
+.keys-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  width: 460px;
+  max-width: calc(100% - 32px);
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.keys-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  height: 44px;
+  border-bottom: 1px solid var(--line);
+}
+
+.keys-body {
+  padding: 8px 12px 12px;
+}
+
+.keys-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 10px;
+  padding: 5px 0;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.keys-key {
+  color: var(--acc);
+}

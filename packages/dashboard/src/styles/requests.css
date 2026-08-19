@@ -2,9 +2,119 @@
 
 .requests {
   display: grid;
-  grid-template-rows: 44px 32px 1fr 30px;
+  grid-template-rows: 52px 44px 32px 1fr 30px;
   height: 100%;
   overflow: hidden;
+  /* The new-requests banner anchors to this box, not to the scroller. */
+  position: relative;
+}
+
+/* ── Timeline scrubber ───────────────────────────────────────────────── */
+
+.timeline {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 0 10px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.timeline-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  flex: none;
+  /* Wide enough for "full range · drag to zoom" on one line: a wrapped hint
+     reads as a broken layout. */
+  width: 196px;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.timeline-chart {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 0 9px;
+  cursor: crosshair;
+  /* The drag is the gesture; the browser must not steal it for scrolling. */
+  touch-action: none;
+}
+
+.tl-bucket {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tl-bucket[data-dim="true"] {
+  opacity: 0.28;
+}
+
+.tl-seg {
+  display: block;
+  width: 100%;
+}
+
+.tl-err {
+  background: var(--err);
+}
+.tl-slow {
+  background: var(--warn);
+}
+.tl-rest {
+  background: var(--line);
+}
+
+.tl-window {
+  position: absolute;
+  top: 4px;
+  bottom: 3px;
+  border-left: 1px solid var(--acc);
+  border-right: 1px solid var(--acc);
+  background: oklch(0.72 0.11 232 / 0.1);
+  pointer-events: none;
+}
+
+.tl-reset {
+  align-self: center;
+  flex: none;
+  font-size: 12px;
+}
+
+/* ── New-requests banner ─────────────────────────────────────────────── */
+
+.new-banner {
+  position: absolute;
+  /* Just inside the scrolling area, clear of the column header. */
+  top: 150px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 5px 12px;
+  border: 0;
+  background: var(--acc);
+  color: var(--bg);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.new-banner:hover {
+  filter: brightness(1.12);
 }
 
 .filters {
@@ -55,6 +165,8 @@
 }
 
 .row-head {
+  /* 10px more on the right: see `scrollbar-gutter` on .rows. */
+  padding-right: 20px;
   background: var(--bg2);
   border-bottom: 1px solid var(--line);
   font-family: var(--mono);
@@ -94,6 +206,11 @@
 
 .rows {
   overflow-y: auto;
+  /* Reserve the scrollbar always, so the columns do not jump by 10px the
+     moment the list grows past one screen. The header pays the same 10px
+     back in its right padding — a spacer grid track would also pick up the
+     column gap and overshoot. */
+  scrollbar-gutter: stable;
 }
 
 .row {
