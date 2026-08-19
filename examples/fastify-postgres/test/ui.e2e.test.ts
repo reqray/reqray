@@ -404,6 +404,38 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     }
   });
 
+  it('switches the waterfall for a flamegraph and back', async () => {
+    const list = (await (await fetch(`${base}/_loupe/api/requests`)).json()) as {
+      requests: Array<{ id: string; path: string }>;
+    };
+    const orders = list.requests.find((row) => row.path === '/api/orders');
+
+    const fresh = await browser.newPage();
+    try {
+      await fresh.goto(`${base}/_loupe/#l/req/${orders?.id}`, { waitUntil: 'domcontentloaded' });
+      await fresh.waitForSelector('.waterfall');
+
+      await fresh.evaluate(() => {
+        const cells = [...document.querySelectorAll('.view-toggle button')];
+        (cells.find((cell) => cell.textContent === 'flamegraph') as HTMLButtonElement)?.click();
+      });
+      await fresh.waitForSelector('.flame-block', { visible: true });
+
+      // Every span is a block, and the graph is as deep as the nesting.
+      const blocks = await fresh.$$eval('.flame-block', (nodes) => nodes.length);
+      expect(blocks).toBeGreaterThan(1);
+      expect(await fresh.$eval('.flame-legend', (node) => node.textContent ?? '')).toContain('sql');
+
+      await fresh.evaluate(() => {
+        const cells = [...document.querySelectorAll('.view-toggle button')];
+        (cells.find((cell) => cell.textContent === 'waterfall') as HTMLButtonElement)?.click();
+      });
+      await fresh.waitForSelector('.wf-span');
+    } finally {
+      await fresh.close();
+    }
+  });
+
   it('the routes screen ranks endpoints and filters the list', async () => {
     await page.evaluate(() => {
       const nav = [...document.querySelectorAll('.nav button')];

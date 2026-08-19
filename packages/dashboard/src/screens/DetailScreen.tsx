@@ -7,6 +7,7 @@ import {
   type Span,
 } from '../api';
 import { buildBriefing, evidenceLine } from '../briefing';
+import { Flamegraph } from '../components/Flamegraph';
 import { ReplayDrawer } from '../components/ReplayDrawer';
 import { badgeFor, Waterfall } from '../components/Waterfall';
 import { clock, duration, durationTone, methodTone, oneLine, statusTone } from '../format';
@@ -349,6 +350,8 @@ export function DetailScreen({
   const [error, setError] = useState<string | null>(null);
   // SQL is the default tab — it is what the developer came for.
   const [tab, setTab] = useState<Tab>('sql');
+  /** Same spans, two axes: by time or by nesting. */
+  const [view, setView] = useState<'wf' | 'flame'>('wf');
   const [replayOpen, setReplayOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [briefed, setBriefed] = useState(false);
@@ -487,7 +490,17 @@ export function DetailScreen({
       ) : null}
 
       <div className="detail-body">
-        <Waterfall detail={detail} />
+        <div className="view-toggle">
+          <div className="segmented">
+            <button type="button" aria-pressed={view === 'wf'} onClick={() => setView('wf')}>
+              waterfall
+            </button>
+            <button type="button" aria-pressed={view === 'flame'} onClick={() => setView('flame')}>
+              flamegraph
+            </button>
+          </div>
+        </div>
+        {view === 'wf' ? <Waterfall detail={detail} /> : <Flamegraph detail={detail} />}
         <Findings detail={detail} />
 
         <div className="tabs" role="tablist">

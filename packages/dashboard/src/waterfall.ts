@@ -47,7 +47,7 @@ function findGaps(detail: RequestDetail): Array<{ start: number; end: number }> 
   return gaps;
 }
 
-function labelOf(span: Span): string {
+export function labelOf(span: Span): string {
   switch (span.kind) {
     case 'db':
       return oneLine(span.sql);
@@ -60,7 +60,7 @@ function labelOf(span: Span): string {
   }
 }
 
-function depthOf(span: Span, byId: Map<number, Span>): number {
+export function depthOf(span: Span, byId: Map<number, Span>): number {
   let depth = 0;
   let parentId = span.parentId;
   // Bounded by the span count; a malformed chain cannot loop forever.
