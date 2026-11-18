@@ -21,10 +21,9 @@ SQL with EXPLAIN; bodies, headers and logs after masking; replay with a
 before/after comparison; per-route statistics; history; exceptions grouped by
 stack. Dark and light themes, and a keyboard layer (`j`/`k`, `/`, `?`).
 
-It is a React single-page application with no server-side rendering. Scripts
-and styles are served from the package; the one thing the browser fetches from
-elsewhere is the typeface (JetBrains Mono, from Google Fonts), and without it
-the panel falls back to the system monospace font.
+It is a React single-page application with no server-side rendering, and it
+asks nothing of another origin: scripts, styles and the typeface (JetBrains
+Mono, under the SIL Open Font License) are all served from the package.
 
 ## More
 

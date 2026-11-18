@@ -5,6 +5,9 @@ import { App } from './App';
 // Listed here in cascade order rather than imported from the components that
 // use them: the sheets override one another, and import order would then
 // depend on which screen React happened to mount first.
+// The typeface, served from this package rather than from a font host: one
+// variable file per script, fetched only when a glyph from it is on screen.
+import '@fontsource-variable/jetbrains-mono';
 import './styles/tokens.css';
 import './styles/base.css';
 import './shared/chart/chart.css';

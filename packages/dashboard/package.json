@@ -43,6 +43,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@reqray/core": "workspace:^",
     "@reqray/protocol": "workspace:^",
     "@reqray/waterfall": "workspace:^",

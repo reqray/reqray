@@ -59,7 +59,8 @@
   --t-chart: 240ms;
   --ease-glide: cubic-bezier(0.2, 0, 0, 1);
 
-  --mono: "JetBrains Mono", ui-monospace, sfmono-regular, "SF Mono", menlo, consolas, monospace;
+  --mono:
+    "JetBrains Mono Variable", ui-monospace, sfmono-regular, "SF Mono", menlo, consolas, monospace;
 }
 
 :root[data-theme="light"] {

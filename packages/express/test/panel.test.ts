@@ -463,6 +463,26 @@ describe('panel static serving', () => {
     expect(stdout.trim().split('\n').at(-1)).toBe('200');
   });
 
+  it('asks nothing of another origin, and serves the typeface itself', async () => {
+    const { app } = harness();
+    const base = await serve(app);
+
+    const html = await fetch(`${base}/_reqray/`).then((r) => r.text());
+    const sheetPath = /assets\/[\w.-]+\.css/.exec(html)?.[0];
+    expect(sheetPath).toBeDefined();
+    const sheet = await fetch(`${base}/_reqray/${sheetPath}`).then((r) => r.text());
+
+    // A panel that fetches a font from a font host tells that host it is open.
+    expect(html).not.toMatch(/(?:href|src)="(?:https?:)?\/\//);
+    expect(sheet).not.toMatch(/url\(\s*["']?(?:https?:)?\/\//);
+
+    const font = /url\(["']?\.?\/?([\w.-]+\.woff2)/.exec(sheet)?.[1];
+    expect(font).toBeDefined();
+    const response = await fetch(`${base}/_reqray/assets/${font}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('font/woff2');
+  });
+
   it('serves assets with a hash in the name', async () => {
     const { app } = harness();
     const base = await serve(app);
