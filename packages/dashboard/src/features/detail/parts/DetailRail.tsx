@@ -20,8 +20,8 @@ interface DetailRailProps {
  * The main column explains the request from within — spans, queries, the
  * fix. The rail answers the questions that need other requests: is this
  * duration normal for the route, who issued it, and what else was happening
- * at that moment. The BASELINE section (pinned p95, compare runs) arrives
- * with stage 45's data.
+ * at that moment. The BASELINE section (pinned p95, compare runs) is not
+ * built yet: it needs data the panel does not keep.
  */
 export function DetailRail({ detail, baseline, onOpen }: DetailRailProps) {
   const asked = useLiveQuery(

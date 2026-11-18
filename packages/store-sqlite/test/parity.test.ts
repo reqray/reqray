@@ -64,7 +64,7 @@ const CASES: Array<[name: string, filter: RequestFilter]> = [
     'the same endpoint under a method nobody used',
     { route: { method: 'PUT', route: '/api/orders' } },
   ],
-  // The token filters stage 54 taught the search box.
+  // The token filters the search box understands.
   ['exactly one status code', { status: 401 }],
   ['a status code nobody answered', { status: 418 }],
   ['a path substring, wildcards and all', { path: 'a_i' }],

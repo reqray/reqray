@@ -695,8 +695,9 @@
   color: var(--fg3);
 }
 
-/* The one status-bar number that is a door rather than a reading. The full
-   interactive bar is stage 53; findings goes first because its tab exists. */
+/* The one status-bar number that is a door rather than a reading. The rest
+   of the bar is not interactive yet; findings goes first because its tab
+   exists. */
 .sb-link {
   padding: 0;
   border: 0;

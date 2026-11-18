@@ -12,7 +12,7 @@ import { costLine, evidenceLine } from '../lib/briefing';
 import { buildFixPrompt, suggestedFix } from '../lib/fix';
 import { HotFrames } from './HotFrames';
 
-/** The pattern key stage 52's states are filed under — the same rule as the server's. */
+/** The pattern key a finding's state is filed under — the same rule as the server's. */
 export function patternKeyOf(detail: RequestDetail, finding: Finding): string {
   return finding.callsite
     ? `${finding.detector}@${finding.callsite.relative}:${finding.callsite.line}`

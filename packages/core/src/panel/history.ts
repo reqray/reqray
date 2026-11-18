@@ -2,7 +2,7 @@
  * One metric over one period, and what the period adds up to.
  *
  * Everything else the panel draws is scoped to something: the strip above the
- * list counts requests and nothing else, and stage 41's charts cover one route
+ * list counts requests and nothing else, and the route charts cover one route
  * at a time. This is the screen that answers "what did latency do this week",
  * and the arithmetic behind it lives here — once, for every store.
  *
@@ -110,7 +110,7 @@ export const SERIES_COLUMNS = 48;
 /**
  * Below this many requests per column a percentile is not a statistic.
  *
- * The same figure stage 41 settled on for a route's charts: a p95 over three
+ * The same figure a route's charts use: a p95 over three
  * samples is the slowest of three, and a chart of those jumps about saying
  * nothing.
  */

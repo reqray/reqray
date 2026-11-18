@@ -143,7 +143,7 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     await fetch(`${base}/api/profile/1`);
     await fetch(`${base}/api/profile/1`);
     // A charge with the transaction still open, and five reports at once on a
-    // pool that cannot serve five: the two shapes stage 42 is about.
+    // pool that cannot serve five: a held transaction and a wait for a connection.
     await fetch(`${base}/api/pay`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
