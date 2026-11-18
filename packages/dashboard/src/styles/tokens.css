@@ -1,7 +1,7 @@
 /*
  * Design tokens.
  *
- * The palette is the redesign handoff's (docs/design/improvements), converted
+ * The palette is the redesign handoff's, converted
  * to oklch — the oklch values are authoritative. Dark is the default theme,
  * light is opt-in via `data-theme="light"` on the root element, so no
  * component ever branches on the theme — it only reads variables.

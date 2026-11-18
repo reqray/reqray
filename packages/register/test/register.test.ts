@@ -53,6 +53,12 @@ describe('auto-instrumentation via node --import', () => {
     expect(result.patched).toBe(true);
   });
 
+  it('loads through --require, where the CommonJS build has no import.meta', () => {
+    const result = run(['--require', `${packageRoot}dist/index.cjs`, `${fixtures}/cjs-app.cjs`]);
+
+    expect(result.patched).toBe(true);
+  });
+
   it('prints a report with the package version and the built-in undici', () => {
     const { diagnostics } = run(['--import', distEntry, `${fixtures}/esm-app.mjs`]);
 

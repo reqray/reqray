@@ -5,9 +5,11 @@
  * way a browser will see it: with real HTTP requests against a live app.
  */
 
+import { execFileSync } from 'node:child_process';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { connect } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { current, fingerprintSql, record } from '@reqray/core';
 import { reqray } from '@reqray/express';
 import { type MemoryStore, memoryTransport } from '@reqray/store-memory';
@@ -436,6 +438,29 @@ describe('panel static serving', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('text/html');
     expect(html).toContain('<div id="root">');
+  });
+
+  it('finds the dashboard from the CommonJS build, as a require()-ing app loads it', () => {
+    // Its own process: the test runner loads the sources as ESM, and the bug
+    // this guards against only exists in the built `.cjs`.
+    const script = `
+      const express = require('express');
+      const { reqray } = require('./dist/index.cjs');
+      const app = express();
+      app.use(reqray({ enabled: true }).middleware);
+      const server = app.listen(0, '127.0.0.1', async () => {
+        const page = await fetch('http://127.0.0.1:' + server.address().port + '/_reqray/');
+        console.log(page.status);
+        server.close();
+        process.exit(0);
+      });`;
+    const stdout = execFileSync(process.execPath, ['-e', script], {
+      encoding: 'utf8',
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
+      timeout: 30_000,
+    });
+
+    expect(stdout.trim().split('\n').at(-1)).toBe('200');
   });
 
   it('serves assets with a hash in the name', async () => {
