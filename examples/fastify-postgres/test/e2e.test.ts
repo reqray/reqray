@@ -285,7 +285,10 @@ describe('demo application', () => {
     // processor, so the share of a genuinely expensive request falls under
     // load; the milliseconds it burns do not.
     expect(hashing?.cpuMs ?? 0).toBeGreaterThan(100);
-    expect(waiting?.cpuMs ?? 999).toBeLessThan(50);
+    // Against the hashing request, not against a number of milliseconds: the
+    // processor time is the process's, the demo's own traffic runs through the
+    // wait, and on a slow shared runner that alone has cost 60 ms.
+    expect(waiting?.cpuMs ?? 999).toBeLessThan((hashing?.cpuMs ?? 0) / 2);
     // The slower request is the cheaper one, which is the whole point: a list
     // ordered by duration puts these two the wrong way round.
     expect(waiting?.durationMs ?? 0).toBeGreaterThan(hashing?.durationMs ?? 0);
