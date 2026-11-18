@@ -1,5 +1,17 @@
 # @reqray/register
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [a52e790]
+  - @reqray/core@0.1.1
+  - @reqray/dashboard@0.1.1
+  - @reqray/instrumentation-ioredis@0.1.1
+  - @reqray/instrumentation-pg@0.1.1
+  - @reqray/instrumentation-undici@0.1.1
+  - @reqray/store-memory@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes

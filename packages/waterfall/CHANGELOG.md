@@ -1,5 +1,11 @@
 # @reqray/waterfall
 
+## 0.1.1
+
+### Patch Changes
+
+- @reqray/protocol@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes

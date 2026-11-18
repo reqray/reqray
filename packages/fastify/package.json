@@ -1,6 +1,6 @@
 {
   "name": "@reqray/fastify",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reqray for Fastify: every request as a waterfall with its SQL, cache and outgoing calls, and N+1 queries found down to the line.",
   "license": "MIT",
   "keywords": [

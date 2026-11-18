@@ -1,6 +1,6 @@
 {
   "name": "@reqray/store-memory",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reqray in-memory store: the ring buffer the panel reads from, and the transport that fills it.",
   "license": "MIT",
   "keywords": [

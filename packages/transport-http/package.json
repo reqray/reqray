@@ -1,6 +1,6 @@
 {
   "name": "@reqray/transport-http",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reqray HTTP transport: batches with backpressure to an external collector.",
   "license": "MIT",
   "keywords": [

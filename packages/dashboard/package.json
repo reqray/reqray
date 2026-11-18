@@ -1,6 +1,6 @@
 {
   "name": "@reqray/dashboard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reqray dashboard: React SPA, built as static files and served by the adapter.",
   "license": "MIT",
   "keywords": [

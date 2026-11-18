@@ -1,6 +1,6 @@
 {
   "name": "@reqray/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reqray core: request context, buffer, sampling, masking, detectors. No third-party runtime dependencies.",
   "license": "MIT",
   "keywords": [

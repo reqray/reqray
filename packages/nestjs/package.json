@@ -1,6 +1,6 @@
 {
   "name": "@reqray/nestjs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Reqray for NestJS: one module in imports, and every request is a waterfall with its SQL, cache and outgoing calls. Finds N+1 down to the line.",
   "license": "MIT",
   "keywords": [

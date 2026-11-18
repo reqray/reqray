@@ -1,5 +1,14 @@
 # @reqray/nestjs
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [a52e790]
+  - @reqray/core@0.1.1
+  - @reqray/express@0.1.1
+  - @reqray/fastify@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes

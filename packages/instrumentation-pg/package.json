@@ -1,6 +1,6 @@
 {
   "name": "@reqray/instrumentation-pg",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "pg driver instrumentation for Reqray.",
   "license": "MIT",
   "keywords": [

@@ -1,6 +1,6 @@
 {
   "name": "@reqray/waterfall",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The waterfall model, shared by every client that draws one: which spans collapse, where the uninstrumented time is, how deep each bar sits.",
   "license": "MIT",
   "keywords": [

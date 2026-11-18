@@ -1,5 +1,16 @@
 # @reqray/server
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [a52e790]
+  - @reqray/core@0.1.1
+  - @reqray/dashboard@0.1.1
+  - @reqray/store-memory@0.1.1
+  - @reqray/store-sqlite@0.1.1
+  - @reqray/transport-file@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes
