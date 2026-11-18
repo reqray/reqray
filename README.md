@@ -186,7 +186,7 @@ docker compose -f docker-compose.staging.yml up --build
 |---|---|
 | Frameworks | Fastify 5, Express 4/5, NestJS 10/11 (both platforms), any `node:http` — in standalone mode |
 | Database | `pg` (and Prisma 7 — it goes through node-postgres) |
-| Cache | `ioredis` 5 and 6, standalone and cluster, pipelines included — the command, the key, hit or miss. Values are never recorded |
+| Cache | `ioredis` 5, standalone and cluster, pipelines included — the command, the key, hit or miss. Values are never recorded |
 | Outgoing HTTP | undici and the built-in `fetch`, via `diagnostics_channel`; the calling line of code — via the `fetch` wrapper |
 | Detectors | N+1; sequential HTTP calls (a missed `Promise.all`); the same outbound read made twice; the same cache key read twice; a response too large for what it carries; a query queueing for a connection; a transaction held open across a call; a stretch of the request spent in your own code; a request over its time budget |
 | Panel | list with a timeline scrubber, filters, highlight rules and a live feed; waterfall or flamegraph; findings; SQL with EXPLAIN; bodies, headers, logs; request replay; per-route aggregates; two-request comparison; exception groups with git blame; a Project tab with the startup report and the settings in force |
@@ -303,7 +303,7 @@ URL.
 
 ```console
 $ npx @reqray/cli watch --slower-than 100
-reqray 0.6.0   watching localhost:3000   pid 41822   ctrl-c to stop
+reqray 0.1.0   watching localhost:3000   pid 41822   ctrl-c to stop
 
    TIME         METHOD ST  PATH                               DUR    Q FLAGS
    09:41:03.077 POST   201 /api/orders                      118ms   9q

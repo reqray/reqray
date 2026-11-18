@@ -1,7 +1,7 @@
 {
   "name": "@reqray/register",
   "version": "0.1.0",
-  "description": "Loader hooks (CJS + ESM) for automatic Reqray instrumentation.",
+  "description": "Start with `node --import @reqray/register` and a Node.js app's requests become waterfalls: SQL, cache and outgoing HTTP instrumented automatically, N+1 found down to the line.",
   "license": "MIT",
   "keywords": [
     "nodejs",
