@@ -7,7 +7,10 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Only a pull request's superseded runs are cancelled. On main every commit
+  # keeps its result: a re-run of an older commit used to cancel the newest
+  # one's benchmark and leave the branch looking broken.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
