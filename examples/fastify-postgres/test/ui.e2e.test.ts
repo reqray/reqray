@@ -154,6 +154,11 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
 
     const { default: puppeteer } = await import('puppeteer-core');
     browser = await puppeteer.launch({ executablePath: chromePath, headless: true });
+    // Under the test timeout, not over it: a wait that never comes true then
+    // fails on its own line, instead of the whole test timing out at its first.
+    browser.on('targetcreated', (target) => {
+      void target.page().then((created) => created?.setDefaultTimeout(15_000));
+    });
     page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 900 });
     page.on('console', (message) => {
@@ -1451,12 +1456,20 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
       // two things true about that request.
       await type('has:code');
       await fresh.waitForFunction(() => {
-        const rows = [...document.querySelectorAll('.row .ellipsis')];
+        const paths = [...document.querySelectorAll('.row .ellipsis')].map(
+          (row) => row.textContent ?? '',
+        );
         // The report, whose heavy part is everything after the query, and the
-        // registration, which hashes a password synchronously. Both are the
-        // demo's deliberate "the time is not in the database" routes.
-        const code = ['/api/report', '/api/register'];
-        return rows.length > 0 && rows.every((row) => code.includes(row.textContent ?? ''));
+        // registration, which hashes a password synchronously: the demo's
+        // deliberate "the time is not in the database" routes. Not "these two
+        // and nothing else" — on a slow machine serializing the export takes
+        // a tenth of a second too, and the detector is right to say so. What
+        // must not be here is a request that spent no time anywhere.
+        return (
+          paths.includes('/api/report') &&
+          paths.includes('/api/register') &&
+          !paths.includes('/api/boom')
+        );
       });
 
       // A view keeps the whole question under a name…
