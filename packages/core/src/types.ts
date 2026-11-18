@@ -1,108 +1,79 @@
 /**
- * Public Loupe types.
+ * Public Reqray types.
+ *
+ * The shapes that travel over the panel API are declared once, in
+ * `@reqray/protocol`, and re-exported here: the server and every client — the
+ * dashboard, the terminal client, somebody's script — must not each carry
+ * their own approximation of the same JSON. `@reqray/protocol` contains no
+ * runtime code, so core still loads nothing it did not load before.
+ *
+ * What stays here is what only the recording side needs: the inputs an
+ * instrumentation passes to `record`, and the instrumentation contract
+ * itself.
  *
  * The core entity names are fixed project-wide and are never renamed:
  * `Span`, `RequestScope`, `Finding`, `Instrumentation`.
  */
 
-/**
- * Span kind. Drives the bar colour in the waterfall and decides which
- * detectors look at the span at all.
- */
-export type SpanKind = 'middleware' | 'handler' | 'db' | 'http' | 'cache';
+import type { CacheOperation, Callsite, LabelSpanKind, SpanError } from '@reqray/protocol';
 
-/** Cache operation. */
-export type CacheOperation = 'get' | 'set' | 'del';
+export type {
+  BaselineResponse,
+  BudgetEvidence,
+  CacheOperation,
+  CacheSpan,
+  Callsite,
+  DbSpan,
+  DuplicateEvidence,
+  DurationBaseline,
+  Finding,
+  FindingEvidence,
+  FindingSeverity,
+  HandlerSpan,
+  HeavyResponseEvidence,
+  HostPressure,
+  HostPressureSide,
+  HostState,
+  HttpSpan,
+  LabelSpanKind,
+  LogEntry,
+  MetricSeries,
+  MiddlewareSpan,
+  NPlusOneEvidence,
+  PoolWaitEvidence,
+  RecordedBody,
+  RecordedRequest,
+  RequestCost,
+  RequestTiming,
+  RequestWeight,
+  SequentialHttpEvidence,
+  SeriesMetric,
+  SeriesResponse,
+  SeriesTotals,
+  SlowCodeEvidence,
+  Span,
+  SpanError,
+  SpanKind,
+  TransactionEvidence,
+} from '@reqray/protocol';
+
+/** What is known about a panel request when access is checked. */
+export interface PanelRequestContext {
+  readonly headers: Readonly<Record<string, string | string[] | undefined>>;
+  readonly ip: string | null;
+}
 
 /**
- * Place in user code the span came from.
+ * Who is allowed into the panel.
  *
- * Always points inside the project: frames from `node_modules` and Node
- * internals are dropped while capturing the stack.
+ * `'open'` is a deliberate "let everyone in": you can write it, but you can
+ * never get it by default.
+ *
+ * Here rather than beside the check that uses it: `config.ts` needs the type
+ * and `panel.ts` needs `ResolvedOptions`, and that cycle compiles only while
+ * both directions stay type-only.
  */
-export interface Callsite {
-  /** Absolute file path. */
-  readonly file: string;
-  /** Path relative to the project root — what the panel shows. */
-  readonly relative: string;
-  readonly line: number;
-  readonly column: number;
-}
-
-/** Error attached to a span or to the request as a whole. */
-export interface SpanError {
-  readonly name: string;
-  readonly message: string;
-  readonly stack: string | null;
-}
-
-interface SpanCommon {
-  /** Sequence number within the request, starting at 1. */
-  readonly id: number;
-  /** Span this one ran inside of, or `null` for roots. */
-  readonly parentId: number | null;
-  /** Offset from the request start, ms. */
-  readonly startedAt: number;
-  /** Duration, ms. */
-  readonly duration: number;
-  readonly callsite: Callsite | null;
-  readonly error: SpanError | null;
-}
-
-/** Middleware span — the work before and after the handler. */
-export interface MiddlewareSpan extends SpanCommon {
-  readonly kind: 'middleware';
-  readonly label: string;
-}
-
-/** Route handler span. Parent of SQL, HTTP and cache spans. */
-export interface HandlerSpan extends SpanCommon {
-  readonly kind: 'handler';
-  readonly label: string;
-}
-
-/** Database query span. */
-export interface DbSpan extends SpanCommon {
-  readonly kind: 'db';
-  readonly sql: string;
-  /** Normalized SQL fingerprint — repeats are grouped by it. */
-  readonly fingerprint: string;
-  readonly rowCount: number | null;
-  /**
-   * Who recorded the span: `pg`, `prisma`, `mysql2`.
-   * Detectors use it to tailor the hint to a specific ORM.
-   */
-  readonly source: string | null;
-  /**
-   * Registry id of the pool or client that ran the query — EXPLAIN goes to
-   * the same database. `null` when the executor is unknown or gone.
-   */
-  readonly clientId: number | null;
-  /**
-   * Parameter values as strings, only under `collectSqlValues: true`.
-   * `null` — not collected (the default in every mode).
-   */
-  readonly values: readonly string[] | null;
-}
-
-/** Outgoing HTTP call span. */
-export interface HttpSpan extends SpanCommon {
-  readonly kind: 'http';
-  readonly method: string;
-  readonly url: string;
-  readonly statusCode: number | null;
-}
-
-/** Cache operation span. */
-export interface CacheSpan extends SpanCommon {
-  readonly kind: 'cache';
-  readonly operation: CacheOperation;
-  readonly key: string;
-  readonly hit: boolean | null;
-}
-
-/** A unit of work inside a request. */
-export type Span = MiddlewareSpan | HandlerSpan | DbSpan | HttpSpan | CacheSpan;
+export type PanelGate = 'open' | ((context: PanelRequestContext) => boolean);
 
 interface SpanInputCommon {
   /** Duration, ms. */
@@ -126,6 +97,10 @@ export interface DbSpanInput extends SpanInputCommon {
   readonly rowCount?: number | null;
   readonly source?: string | null;
   readonly clientId?: number | null;
+  /** @see DbSpan.connectionId */
+  readonly connectionId?: number | null;
+  /** @see DbSpan.waitMs */
+  readonly waitMs?: number | null;
   readonly values?: readonly string[] | null;
 }
 
@@ -141,111 +116,19 @@ export interface HttpSpanInput extends SpanInputCommon {
 export interface CacheSpanInput extends SpanInputCommon {
   readonly kind: 'cache';
   readonly operation: CacheOperation;
+  readonly command?: string | null;
   readonly key: string;
   readonly hit?: boolean | null;
 }
 
 /** @see MiddlewareSpan @see HandlerSpan */
 export interface LabelSpanInput extends SpanInputCommon {
-  readonly kind: 'middleware' | 'handler';
+  readonly kind: LabelSpanKind;
   readonly label: string;
 }
 
 /** What an instrumentation passes to {@link record}. */
 export type SpanInput = DbSpanInput | HttpSpanInput | CacheSpanInput | LabelSpanInput;
-
-/** Log line bound to a request. */
-export interface LogEntry {
-  /** Offset from the request start, ms. */
-  readonly at: number;
-  readonly level: 'debug' | 'info' | 'warn' | 'error';
-  readonly message: string;
-}
-
-/** How serious a finding is. Drives highlighting in the panel. */
-export type FindingSeverity = 'info' | 'warn' | 'critical';
-
-/** Evidence for the N+1 detector. */
-export interface NPlusOneEvidence {
-  readonly kind: 'n_plus_one';
-  /** How many times the same fingerprint ran. */
-  readonly repeats: number;
-  readonly fingerprint: string;
-  /** One query from the group — shown in the panel as a sample. */
-  readonly sample: string;
-  /** Total time of all repeats, ms. */
-  readonly totalMs: number;
-  readonly spanIds: readonly number[];
-}
-
-/** Evidence for the sequential-HTTP detector. */
-export interface SequentialHttpEvidence {
-  readonly kind: 'sequential_http';
-  /** How many calls of one shape ran in sequence. */
-  readonly repeats: number;
-  /** Normalized call shape: `GET api.example.com/users/:id`. */
-  readonly fingerprint: string;
-  /** One call from the run — shown in the panel as a sample. */
-  readonly sample: string;
-  /** Total time of all calls, ms. */
-  readonly totalMs: number;
-  readonly spanIds: readonly number[];
-}
-
-/** Evidence for the duplicate-work detectors, HTTP and cache alike. */
-export interface DuplicateEvidence {
-  readonly kind: 'duplicate';
-  /** How many identical calls were made. */
-  readonly repeats: number;
-  /** What made them identical: the URL, or the cache key. */
-  readonly fingerprint: string;
-  readonly sample: string;
-  readonly totalMs: number;
-  readonly spanIds: readonly number[];
-}
-
-/** Evidence for the budget detector: where a slow request spent its time. */
-export interface BudgetEvidence {
-  readonly kind: 'budget';
-  readonly durationMs: number;
-  readonly budgetMs: number;
-  /** Time inside outgoing HTTP calls, ms. */
-  readonly externalMs: number;
-  /** Time inside SQL queries, ms. */
-  readonly sqlMs: number;
-  /** Always empty: the finding is about the request, not about spans. */
-  readonly spanIds: readonly number[];
-}
-
-/** Finding specifics. Extended as new detectors land. */
-export type FindingEvidence =
-  | NPlusOneEvidence
-  | SequentialHttpEvidence
-  | DuplicateEvidence
-  | BudgetEvidence;
-
-/**
- * Detector finding: what is wrong, where, what it costs and how to fix it.
- *
- * Without `costMs` and `callsite` a finding is useless — it reports a problem
- * but does not help solve it.
- */
-export interface Finding {
-  /** Detector id, e.g. `n_plus_one`. */
-  readonly detector: string;
-  readonly severity: FindingSeverity;
-  /** One line for the block heading in the panel. */
-  readonly title: string;
-  /**
-   * Milliseconds that come back if the problem is fixed.
-   * Potential saving, not "how long it took".
-   */
-  readonly costMs: number;
-  readonly callsite: Callsite | null;
-  readonly evidence: FindingEvidence;
-  /** How to fix it. Tailored to the specific ORM where possible. */
-  readonly hint: string;
-}
 
 /**
  * Instrumentation for a third-party library.
@@ -264,48 +147,4 @@ export interface Instrumentation {
   apply(exports: any): void;
   /** Restore the exports to their original state. Needed by tests. */
   unapply?(exports: any): void;
-}
-
-/**
- * A body as the buffer stores it: masked, serialized, size-capped.
- *
- * Text rather than a parsed tree — see `body.ts` for why.
- */
-export interface RecordedBody {
-  /** Serialized text; JSON when the original was structured. */
-  readonly text: string;
-  /** The text was cut at `redact.maxBodyLength`. */
-  readonly truncated: boolean;
-}
-
-/** A completed request — what goes to the transport and to the panel. */
-export interface RecordedRequest {
-  readonly id: string;
-  readonly method: string;
-  readonly path: string;
-  readonly query: string | null;
-  readonly status: number;
-  readonly durationMs: number;
-  /** Request start time, epoch ms. */
-  readonly startedAt: number;
-  readonly spans: readonly Span[];
-  readonly findings: readonly Finding[];
-  readonly requestHeaders: Readonly<Record<string, string>>;
-  readonly responseHeaders: Readonly<Record<string, string>>;
-  readonly requestBody: RecordedBody | null;
-  readonly responseBody: RecordedBody | null;
-  readonly logs: readonly LogEntry[];
-  readonly error: SpanError | null;
-  /** How many spans had to be dropped because of the limit. */
-  readonly droppedSpans: number;
-  /** How many log lines had to be dropped because of the per-request cap. */
-  readonly droppedLogs: number;
-  /**
-   * The test that issued this request, when a test harness said so through
-   * the `x-loupe-test` header — e.g. `orders.spec.ts:42 › creates an order`.
-   *
-   * `null` for ordinary traffic. Knowing a request came from a test is what
-   * turns "this is slow" into "this test reproduces it".
-   */
-  readonly test: string | null;
 }

@@ -1,22 +1,16 @@
 /**
  * Standalone mode: the panel with zero lines of code.
  *
- * The application here is bare `node:http` with no mention of Loupe — that is
+ * The application here is bare `node:http` with no mention of Reqray — that is
  * the whole point being tested.
  */
 
 import { once } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import {
-  current,
-  fingerprintSql,
-  markAdapterActive,
-  record,
-  resetAdapterActive,
-  resetWarnings,
-} from '@loupe/core';
-import { enableStandalone, resetStandalone, standalonePanelUrl } from '@loupe/register';
+import { current, fingerprintSql, markAdapterActive, record } from '@reqray/core';
+import { resetAdapterActive, resetWarnings } from '@reqray/core/testing';
+import { enableStandalone, resetStandalone, standalonePanelUrl } from '@reqray/register';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 function fakeQuery(sql: string, duration: number, startTime: number): void {
@@ -33,7 +27,7 @@ function fakeQuery(sql: string, duration: number, startTime: number): void {
 
 const servers: Server[] = [];
 
-/** A bare application: routes are an if-chain, Loupe is nowhere in it. */
+/** A bare application: routes are an if-chain, Reqray is nowhere in it. */
 async function startBareApp(): Promise<string> {
   const app = createServer((request, response) => {
     if (request.url?.startsWith('/one')) {
@@ -59,7 +53,7 @@ async function panelUrl(timeoutMs = 2_000): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const url = standalonePanelUrl();
-    if (url) return url.replace(/\/_loupe\/$/, '');
+    if (url) return url.replace(/\/_reqray\/$/, '');
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   throw new Error('the standalone panel never came up');
@@ -68,7 +62,7 @@ async function panelUrl(timeoutMs = 2_000): Promise<string> {
 async function waitForRows(base: string, count: number, timeoutMs = 2_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const payload = (await (await fetch(`${base}/_loupe/api/requests`)).json()) as {
+    const payload = (await (await fetch(`${base}/_reqray/api/requests`)).json()) as {
       requests: Array<Record<string, unknown>>;
     };
     if (payload.requests.length >= count) return payload.requests;
@@ -113,7 +107,7 @@ describe('standalone', () => {
     });
 
     const detail = (await (
-      await fetch(`${panel}/_loupe/api/requests/${rows[0]?.['id']}`)
+      await fetch(`${panel}/_reqray/api/requests/${rows[0]?.['id']}`)
     ).json()) as {
       spans: Array<{ kind: string }>;
       requestBody: unknown;
@@ -137,7 +131,7 @@ describe('standalone', () => {
     expect(rows[0]?.['nPlusOne']).toBe(true);
 
     const detail = (await (
-      await fetch(`${panel}/_loupe/api/requests/${rows[0]?.['id']}`)
+      await fetch(`${panel}/_reqray/api/requests/${rows[0]?.['id']}`)
     ).json()) as {
       findings: Array<{ detector: string; callsite: { relative: string } | null }>;
     };
@@ -154,8 +148,8 @@ describe('standalone', () => {
     await waitForRows(panel, 1);
 
     // A few panel reads must not become new records.
-    await fetch(`${panel}/_loupe/api/requests`);
-    await fetch(`${panel}/_loupe/api/requests`);
+    await fetch(`${panel}/_reqray/api/requests`);
+    await fetch(`${panel}/_reqray/api/requests`);
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     const rows = await waitForRows(panel, 1);
@@ -173,8 +167,8 @@ describe('standalone', () => {
     expect(standalonePanelUrl()).toBeNull();
   });
 
-  it('LOUPE_STANDALONE=off disables the mode entirely', async () => {
-    vi.stubEnv('LOUPE_STANDALONE', 'off');
+  it('REQRAY_STANDALONE=off disables the mode entirely', async () => {
+    vi.stubEnv('REQRAY_STANDALONE', 'off');
     enableStandalone({ panelPort: 0 });
     const app = await startBareApp();
 

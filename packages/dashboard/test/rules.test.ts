@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { RequestRow } from '../src/api';
-import { DEFAULT_RULES, loadRules, RULES, type RuleId, saveRules, tintOf } from '../src/rules';
+import type { RequestRow } from '../src/api/index';
+import {
+  DEFAULT_RULES,
+  loadRules,
+  RULES,
+  type RuleId,
+  saveRules,
+  tintOf,
+} from '../src/features/requests/lib/rules';
 
 function row(overrides: Partial<RequestRow> = {}): RequestRow {
   return {
@@ -8,6 +15,8 @@ function row(overrides: Partial<RequestRow> = {}): RequestRow {
     method: 'GET',
     path: '/api/orders',
     query: null,
+    route: '/api/orders',
+    flag: null,
     status: 200,
     durationMs: 20,
     startedAt: 1_000,
@@ -16,6 +25,8 @@ function row(overrides: Partial<RequestRow> = {}): RequestRow {
     nPlusOne: false,
     findingCount: 0,
     hasError: false,
+    cpuMs: null,
+    cpuShare: null,
     pinned: false,
     test: null,
     ...overrides,

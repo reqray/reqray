@@ -1,50 +1,101 @@
 /*
  * Design tokens.
  *
- * The oklch values are authoritative. Dark is the default theme, light is
- * opt-in via `data-theme="light"` on the root element, so no component ever
- * branches on the theme — it only reads variables.
+ * The palette is the redesign handoff's (docs/design/improvements), converted
+ * to oklch — the oklch values are authoritative. Dark is the default theme,
+ * light is opt-in via `data-theme="light"` on the root element, so no
+ * component ever branches on the theme — it only reads variables.
+ *
+ * Accents come in up to four voices: the plain token is text, `-line` is a
+ * border, `-fill` is a pale wash behind a tag, `-bar` is a filled data bar.
+ * In dark, tags keep border and text and lose their fill — a filled tag on a
+ * dark ground reads as a button — while the bars keep their light-theme hues
+ * so the scanning cue survives the theme switch.
  */
 
 :root {
-  --bg: oklch(0.205 0.006 250);
-  --bg2: oklch(0.235 0.006 250);
-  --bg3: oklch(0.275 0.007 250);
-  --sel: oklch(0.315 0.024 245);
-  --selh: oklch(0.345 0.026 245);
-  --fg: oklch(0.93 0.004 250);
-  --fg2: oklch(0.72 0.006 250);
-  --fg3: oklch(0.56 0.006 250);
-  --line: oklch(0.315 0.006 250);
-  --line2: oklch(0.265 0.006 250);
-  --acc: oklch(0.72 0.11 232);
-  --ok: oklch(0.72 0.09 150);
-  --warn: oklch(0.78 0.09 82);
-  --err: oklch(0.68 0.12 25);
+  --bg: oklch(0.208 0.007 258.4);
+  --bg2: oklch(0.234 0.009 255.6);
+  --bg3: oklch(0.247 0.01 260.7);
+  --inset: oklch(0.186 0.007 258.4);
+  --sel: oklch(0.266 0.022 88);
+  --selh: oklch(0.299 0.027 88.7);
+  --fg: oklch(0.888 0.011 95.2);
+  --fg2: oklch(0.633 0.012 95.2);
+  --fg3: oklch(0.52 0.014 96.6);
+  --fg4: oklch(0.449 0.011 93.7);
+  --line: oklch(0.304 0.012 258.4);
+  --line2: oklch(0.255 0.009 255.6);
+  --line3: oklch(0.359 0.01 260.7);
+  --track: oklch(0.264 0.01 260.7);
+  --acc: oklch(0.722 0.096 252.5);
+  --acc-line: oklch(0.475 0.066 250.1);
+  --acc-fill: transparent;
+  --acc-bar: oklch(0.597 0.108 250.4);
+  --acc-soft: oklch(0.693 0.072 250.8);
+  --acc-deep: oklch(0.428 0.12 256.8);
+  --ok: oklch(0.718 0.074 154.2);
+  --ok-line: oklch(0.47 0.047 156.3);
+  --ok-bar: oklch(0.659 0.07 154.8);
+  --warn: oklch(0.751 0.13 79.8);
+  --warn-line: oklch(0.546 0.093 83.5);
+  --warn-fill: transparent;
+  --warn-bar: oklch(0.751 0.13 79.8);
+  --err: oklch(0.672 0.144 31.6);
+  --err-line: oklch(0.479 0.105 32.1);
+  --err-fill: transparent;
+  --err-bar: oklch(0.574 0.148 30.8);
+  --diff-del-bg: oklch(0.243 0.023 32.4);
+  --diff-del-fg: oklch(0.713 0.099 31.5);
+  --diff-add-bg: oklch(0.245 0.025 154);
+  --diff-add-fg: oklch(0.761 0.071 152.9);
 
   --row: 40px;
 
-  /* Motion: fast is hover feedback, slow is entrances and the drawer. */
-  --t-fast: 90ms;
-  --t-slow: 180ms;
+  /* Motion: fast is hover feedback, slow is expansion and entrances, chart
+     is a zoom or a re-scale. One easing for things that settle into place. */
+  --t-fast: 120ms;
+  --t-slow: 200ms;
+  --t-chart: 240ms;
+  --ease-glide: cubic-bezier(0.2, 0, 0, 1);
 
-  --ui: "Archivo", system-ui, -apple-system, "Segoe UI", roboto, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, sfmono-regular, "SF Mono", menlo, consolas, monospace;
 }
 
 :root[data-theme="light"] {
-  --bg: oklch(0.985 0.002 250);
-  --bg2: oklch(0.955 0.003 250);
-  --bg3: oklch(0.925 0.004 250);
-  --sel: oklch(0.905 0.028 245);
-  --selh: oklch(0.875 0.03 245);
-  --fg: oklch(0.26 0.006 250);
-  --fg2: oklch(0.46 0.006 250);
-  --fg3: oklch(0.62 0.006 250);
-  --line: oklch(0.87 0.004 250);
-  --line2: oklch(0.925 0.004 250);
-  --acc: oklch(0.52 0.13 232);
-  --ok: oklch(0.52 0.09 150);
-  --warn: oklch(0.56 0.1 70);
-  --err: oklch(0.53 0.15 25);
+  --bg: oklch(0.988 0.003 106.4);
+  --bg2: oklch(0.973 0.004 91.4);
+  --bg3: oklch(0.952 0.005 95.1);
+  --inset: oklch(0.967 0.004 91.4);
+  --sel: oklch(0.974 0.022 87.1);
+  --selh: oklch(0.947 0.036 89.4);
+  --fg: oklch(0.268 0.01 260.7);
+  --fg2: oklch(0.474 0.01 99);
+  --fg3: oklch(0.582 0.011 100.1);
+  --fg4: oklch(0.682 0.01 100.1);
+  --line: oklch(0.909 0.007 97.4);
+  --line2: oklch(0.949 0.005 95.1);
+  --line3: oklch(0.872 0.008 98.9);
+  --track: oklch(0.946 0.005 95.1);
+  --acc: oklch(0.526 0.132 255.3);
+  --acc-line: oklch(0.762 0.046 252.6);
+  --acc-fill: oklch(0.962 0.01 252.8);
+  --acc-bar: oklch(0.597 0.108 250.4);
+  --acc-soft: oklch(0.693 0.072 250.8);
+  --acc-deep: oklch(0.428 0.12 256.8);
+  --ok: oklch(0.528 0.088 153.3);
+  --ok-line: oklch(0.77 0.06 145);
+  --ok-bar: oklch(0.659 0.07 154.8);
+  --warn: oklch(0.519 0.101 75.1);
+  --warn-line: oklch(0.583 0.114 75.2);
+  --warn-fill: oklch(0.967 0.028 84.6);
+  --warn-bar: oklch(0.751 0.13 79.8);
+  --err: oklch(0.522 0.157 29.6);
+  --err-line: oklch(0.574 0.148 30.8);
+  --err-fill: oklch(0.958 0.015 37.9);
+  --err-bar: oklch(0.574 0.148 30.8);
+  --diff-del-bg: oklch(0.958 0.015 37.9);
+  --diff-del-fg: oklch(0.479 0.105 32.1);
+  --diff-add-bg: oklch(0.962 0.013 149.2);
+  --diff-add-fg: oklch(0.48 0.082 153);
 }

@@ -1,0 +1,8 @@
+  q1   8.6ms   25 rows     services/orders.js:96
+
+       SELECT o.id, o.reference, o.status, o.total_cents, o.currency, o.created_at, u.email,
+       u.display_name, a.line1, a.city, a.country_code, COUNT(li.id) AS item_count FROM orders o
+       INNER JOIN users u ON u.id = o.user_id LEFT JOIN addresses a ON a.id = o.address_id LEFT
+       JOIN line_items li ON li.order_id = o.id WHERE o.status IN (1, 2, 3) AND o.created_at > $1
+       GROUP BY o.id, u.email, u.display_name, a.line1, a.city, a.country_code ORDER BY
+       o.created_at DESC LIMIT 25

@@ -1,16 +1,27 @@
 import {
-  filterRequests,
-  groupExceptions,
+  multiTransport,
   type RecordedRequest,
   resolveOptions,
+  setLogSink,
+  timingOf,
+  weightOf,
+} from '@reqray/core';
+import {
+  decodeCursor,
+  encodeCursor,
+  filterRequests,
+  groupExceptions,
+  isAfterCursor,
+  panelSourceFor,
   summarize,
-} from '@loupe/core';
+} from '@reqray/core/panel';
+import { resetWarnings } from '@reqray/core/testing';
 import { describe, expect, it } from 'vitest';
 
 const stack = resolveOptions({ stack: { projectRoot: '/srv/app' } }).stack;
 
 function request(overrides: Partial<RecordedRequest> = {}): RecordedRequest {
-  return {
+  const base = {
     id: 'r1',
     method: 'GET',
     path: '/orders',
@@ -30,6 +41,13 @@ function request(overrides: Partial<RecordedRequest> = {}): RecordedRequest {
     droppedLogs: 0,
     test: null,
     ...overrides,
+  };
+  return {
+    ...base,
+    timing: timingOf(base.spans, base.durationMs),
+    host: base.host ?? null,
+    weight: weightOf(base),
+    cost: null,
   };
 }
 
@@ -72,6 +90,16 @@ describe('list filters', () => {
   it('filters by duration and presence of findings', () => {
     expect(filterRequests(all, { minDurationMs: 100 }).map((r) => r.id)).toEqual(['a', 'c']);
     expect(filterRequests(all, { onlyFindings: true }).map((r) => r.id)).toEqual(['c']);
+  });
+
+  it('"only what failed" is wider than the 5xx class', () => {
+    // A handler that threw and still answered 200 is the failure worth
+    // finding; a status filter would never show it.
+    const threw = request({ id: 'd', status: 200, error: errorAt(61) });
+    const withThrow = [...all, threw];
+
+    expect(filterRequests(withThrow, { onlyErrors: true }).map((r) => r.id)).toEqual(['b', 'd']);
+    expect(filterRequests(withThrow, { statusClasses: [5] }).map((r) => r.id)).toEqual(['b']);
   });
 
   it('an empty filter cuts nothing and preserves order', () => {
@@ -159,5 +187,84 @@ describe('exception grouping', () => {
     expect(buckets).toHaveLength(12);
     expect(buckets.reduce((sum, value) => sum + value, 0)).toBe(2);
     expect(buckets.at(-1)).toBe(1);
+  });
+});
+
+describe('list cursors', () => {
+  it('round-trip a position back', () => {
+    expect(decodeCursor(encodeCursor(1_734_000_000_000, 'a3f'))).toEqual({
+      key: 1_734_000_000_000,
+      id: 'a3f',
+    });
+  });
+
+  it('survive a fractional key, which a duration is', () => {
+    // Split at the last dot, not the first: `12.5.a3f` is one key and one id.
+    expect(decodeCursor(encodeCursor(12.5, 'a3f'))).toEqual({ key: 12.5, id: 'a3f' });
+  });
+
+  it('read anything unparseable as "start from the beginning"', () => {
+    expect(decodeCursor(null)).toBeNull();
+    expect(decodeCursor('')).toBeNull();
+    expect(decodeCursor('nonsense')).toBeNull();
+    expect(decodeCursor('.a3f')).toBeNull();
+    expect(decodeCursor('1700.')).toBeNull();
+  });
+
+  it('continue strictly past the position, with the id breaking a tie', () => {
+    const cursor = { key: 100, id: 'r5' };
+
+    expect(isAfterCursor(cursor, 99, 'r9')).toBe(true);
+    expect(isAfterCursor(cursor, 101, 'r1')).toBe(false);
+    // Same key: the row that is already on the previous page is not served
+    // again, and the one below it is.
+    expect(isAfterCursor(cursor, 100, 'r5')).toBe(false);
+    expect(isAfterCursor(cursor, 100, 'r4')).toBe(true);
+    expect(isAfterCursor(cursor, 100, 'r6')).toBe(false);
+  });
+});
+
+describe('finding the store the panel reads', () => {
+  const store = {
+    name: 'memory',
+    send: () => {},
+    list: () => [],
+    get: () => undefined,
+    clear: () => {},
+    subscribe: () => () => {},
+  };
+  const log = { name: 'file', send: () => {} };
+  const panelOn = resolveOptions({ mode: 'development' });
+
+  it('takes a transport that is a store', () => {
+    expect(panelSourceFor(store, panelOn)).toBe(store);
+  });
+
+  it('finds the store among several, in whichever order they were given', () => {
+    expect(panelSourceFor(multiTransport([log, store]), panelOn)).toBe(store);
+    expect(panelSourceFor(multiTransport([store, log]), panelOn)).toBe(store);
+  });
+
+  it('says so when nothing among them keeps anything', () => {
+    const warnings: string[] = [];
+    setLogSink({ info: () => {}, warn: (message) => warnings.push(message) });
+
+    expect(
+      panelSourceFor(multiTransport([log, { name: 'http', send: () => {} }]), panelOn),
+    ).toBeNull();
+    expect(warnings.join(' ')).toContain('the panel is not mounted');
+
+    setLogSink(null);
+    resetWarnings();
+  });
+
+  it('stays quiet when there is no panel to mount', () => {
+    const warnings: string[] = [];
+    setLogSink({ info: () => {}, warn: (message) => warnings.push(message) });
+
+    expect(panelSourceFor(log, resolveOptions({ mode: 'development', panel: false }))).toBeNull();
+    expect(warnings).toEqual([]);
+
+    setLogSink(null);
   });
 });

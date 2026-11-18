@@ -1,7 +1,7 @@
 ---
-'@loupe/core': minor
-'@loupe/dashboard': minor
-'@loupe/transport-memory': minor
+'@reqray/core': minor
+'@reqray/dashboard': minor
+'@reqray/store-memory': minor
 ---
 
 The v0.6 surfaces: a timeline scrubber over the request list, pinning that

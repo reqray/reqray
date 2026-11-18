@@ -10,6 +10,16 @@
 import { warnOnce } from './logger.js';
 import type { RecordedRequest } from './types.js';
 
+/**
+ * A transport that writes to several others.
+ *
+ * It says which ones: the panel needs the store among them, and a wrapper
+ * that hides its members would hide the store with them.
+ */
+export interface MultiTransport extends Transport {
+  readonly transports: readonly Transport[];
+}
+
 /** Where finished requests are sent. */
 export interface Transport {
   /** Name for diagnostics: `memory`, `http`. */
@@ -31,9 +41,50 @@ export interface Transport {
 }
 
 /**
+ * One transport that writes to several.
+ *
+ * A store and a log file are two transports over one stream of requests, and
+ * neither should have to know about the other. A transport that throws is
+ * reported once and skipped — the others still get the request, because a
+ * broken log must not cost the panel its data.
+ */
+export function multiTransport(transports: readonly Transport[]): Transport {
+  const list = transports.filter(Boolean);
+  if (list.length === 1) return list[0] as Transport;
+
+  const fanOut: MultiTransport = {
+    name: list.map((transport) => transport.name).join('+') || 'null',
+    transports: list,
+
+    send(request) {
+      for (const transport of list) {
+        try {
+          transport.send(request);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          warnOnce(
+            `transport.send.${transport.name}`,
+            `${transport.name} refused a request: ${reason}`,
+          );
+        }
+      }
+    },
+
+    async flush() {
+      await Promise.all(list.map((transport) => transport.flush?.()));
+    },
+
+    async close() {
+      await Promise.all(list.map((transport) => transport.close?.()));
+    },
+  };
+  return fanOut;
+}
+
+/**
  * Transport that stores nothing.
  *
- * The core default: `@loupe/core` depends on no package at all, transports
+ * The core default: `@reqray/core` depends on no package at all, transports
  * included. Adapters plug in a real transport themselves.
  */
 export const nullTransport: Transport = {

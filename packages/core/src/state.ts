@@ -1,129 +1,123 @@
 /**
- * Loupe state shared across the whole process.
+ * State that has to be single per process.
  *
- * `@loupe/core` is built as both ESM and CJS. Both builds can end up loaded in
- * one application at once: the adapter came in through `import`, while a
- * loader hook or a third-party package came in through `require`. That gives
- * two sets of module-level variables, and this is not cosmetic: two separate
+ * `@reqray/core` is built as both ESM and CJS, and both builds can end up
+ * loaded in one application at once: the adapter came in through `import`,
+ * while a loader hook or a third-party package came in through `require`. That
+ * gives two sets of module-level variables, and it is not cosmetic — two
  * `AsyncLocalStorage` instances mean instrumentation never sees the scope the
- * adapter created, and no spans are recorded at all.
+ * adapter created, and nothing is recorded at all.
  *
- * So everything that must be single per process lives on `globalThis` under a
- * symbol from the global registry — the same one for both copies.
+ * So anything that must be single lives on `globalThis`, under a symbol from
+ * the global registry that both copies resolve to the same way. This file does
+ * not hold that state — it hands out slots, and each module declares, names
+ * and types the state it owns.
  */
 
-import { AsyncLocalStorage } from 'node:async_hooks';
-import type { DiagnosticEntry } from './diagnostics.js';
-import type { LoupeLogSink } from './logger.js';
-import type { RequestScope } from './scope.js';
-import type { SqlOperation } from './sql.js';
-import type { Callsite, RecordedRequest } from './types.js';
-
 /** Version in the key: an incompatible change of shape must not break silently. */
-const STATE_KEY = Symbol.for('loupe.state.v1');
+const REGISTRY_KEY = Symbol.for('reqray.state.v2');
 
-/** Everything that has to be single per process. */
-export interface LoupeGlobalState {
-  /** Current request context. */
-  readonly storage: AsyncLocalStorage<RequestScope>;
-  /** Instrumentation report to print at startup. */
-  readonly diagnostics: DiagnosticEntry[];
-  /** Keys of warnings already issued. */
-  readonly warned: Set<string>;
-  /** Detectors that disabled themselves after an error. */
-  readonly disabledDetectors: Set<string>;
-  /** SQL fingerprint cache keyed by the source string. */
-  readonly fingerprints: Map<string, string>;
-  /** Statement type cache. */
-  readonly operations: Map<string, SqlOperation>;
-  /**
-   * Pending replays: a request with such a marker stays out of the main list,
-   * its record goes to whoever started the replay.
-   */
-  readonly replayWaiters: Map<string, (request: RecordedRequest) => void>;
-  /**
-   * Callsite handed from a pool wrapper down to the driver wrapper.
-   *
-   * Absent outside a pooled query — that is what tells the driver wrapper to
-   * capture a stack of its own.
-   */
-  readonly pendingCallsite: AsyncLocalStorage<{
-    readonly callsite: Callsite | null;
-    readonly clientId?: number;
-  }>;
-  /**
-   * What has been learned about each SQL fingerprint's origin.
-   *
-   * Process-wide, not per request: capturing a stack is the single most
-   * expensive thing Loupe does, and in production it is paid only while the
-   * origin of a fingerprint is still unknown.
-   */
-  readonly callsites: Map<string, CallsiteRecord>;
-  /** The startup report has already been printed. */
-  printed: boolean;
-  /** Where Loupe writes its own messages. `null` — the default sink. */
-  sink: LoupeLogSink | null;
-  /**
-   * A framework adapter has been initialized.
-   *
-   * The standalone mode in `@loupe/register` checks this to stand down: an
-   * adapter records the same requests with full fidelity.
-   */
-  adapterActive: boolean;
-  /**
-   * Live database pools and clients, able to run EXPLAIN — weakly referenced,
-   * so the registry never keeps a closed pool alive. See `explain-targets.ts`.
-   */
-  readonly explainTargets: Map<number, WeakRef<object>>;
-  /** Id source for {@link explainTargets}. */
-  explainTargetSeq: number;
+type Holder = typeof globalThis & { [REGISTRY_KEY]?: Map<string, unknown> };
+
+function registry(): Map<string, unknown> {
+  const holder = globalThis as Holder;
+  const existing = holder[REGISTRY_KEY];
+  if (existing) return existing;
+
+  const fresh = new Map<string, unknown>();
+  holder[REGISTRY_KEY] = fresh;
+  return fresh;
 }
 
-/** What is known about where a fingerprint is issued from. */
-export interface CallsiteRecord {
-  callsite: Callsite | null;
-  /** How many stacks have been captured for this fingerprint. */
-  samples: number;
-  /**
-   * The same SQL has been seen coming from more than one place.
-   *
-   * Attributing it to either one would be a lie, so nothing is attributed —
-   * and the N+1 detector, which needs a single origin, stays silent.
-   */
-  ambiguous: boolean;
-}
+/**
+ * Declares one piece of process-wide state and returns the way to read it.
+ *
+ * The name is the identity across module copies, so it must be unique and
+ * stable — by convention, `<module>.<what>`. The accessor caches after the
+ * first call: `current()` is the first line of every instrumentation wrapper
+ * and must not cost a global lookup and a map read each time.
+ *
+ * @example
+ * const fingerprints = globalSlot('sql.fingerprints', () => new Map<string, string>());
+ */
+export function globalSlot<T>(name: string, create: () => T): () => T {
+  let cached: T | undefined;
+  let resolved = false;
 
-type StateHolder = typeof globalThis & { [STATE_KEY]?: LoupeGlobalState };
+  return (): T => {
+    if (resolved) return cached as T;
 
-function create(): LoupeGlobalState {
-  return {
-    storage: new AsyncLocalStorage<RequestScope>(),
-    diagnostics: [],
-    warned: new Set<string>(),
-    disabledDetectors: new Set<string>(),
-    fingerprints: new Map<string, string>(),
-    operations: new Map<string, SqlOperation>(),
-    replayWaiters: new Map<string, (request: RecordedRequest) => void>(),
-    pendingCallsite: new AsyncLocalStorage<{
-      readonly callsite: Callsite | null;
-      readonly clientId?: number;
-    }>(),
-    callsites: new Map<string, CallsiteRecord>(),
-    printed: false,
-    sink: null,
-    adapterActive: false,
-    explainTargets: new Map<number, WeakRef<object>>(),
-    explainTargetSeq: 0,
+    const slots = registry();
+    if (!slots.has(name)) slots.set(name, create());
+    cached = slots.get(name) as T;
+    resolved = true;
+    return cached;
   };
 }
 
-/** Shared process state. Created on first access. */
-export function loupeState(): LoupeGlobalState {
-  const holder = globalThis as StateHolder;
-  const existing = holder[STATE_KEY];
-  if (existing) return existing;
+/**
+ * A single mutable value, for state that is not an object.
+ *
+ * A slot hands back a reference, so a boolean or a counter needs something to
+ * be a reference *to*.
+ */
+export interface Box<T> {
+  value: T;
+}
 
-  const fresh = create();
-  holder[STATE_KEY] = fresh;
-  return fresh;
+/** @see Box */
+export function globalBox<T>(name: string, initial: T): () => Box<T> {
+  return globalSlot(name, () => ({ value: initial }));
+}
+
+/**
+ * A bounded cache with no cliff at the limit.
+ *
+ * Clearing at the ceiling would make an application sitting just over it throw
+ * away its hottest entries with its coldest and miss on everything until the
+ * cache refills. Instead the hot generation becomes the cold one and a fresh
+ * one starts; a read that hits the cold one promotes the entry. Holds at most
+ * twice `limit`.
+ */
+export class TwoGenerationCache<K, V> {
+  #hot = new Map<K, V>();
+  #cold = new Map<K, V>();
+
+  constructor(private readonly limit: number) {}
+
+  get(key: K): V | undefined {
+    const hot = this.#hot.get(key);
+    if (hot !== undefined) return hot;
+
+    const cold = this.#cold.get(key);
+    if (cold === undefined) return undefined;
+    // Used again, so it belongs in the generation that will survive.
+    this.#hot.set(key, cold);
+    return cold;
+  }
+
+  set(key: K, value: V): void {
+    if (this.#hot.size >= this.limit) {
+      this.#cold = this.#hot;
+      this.#hot = new Map<K, V>();
+    }
+    this.#hot.set(key, value);
+  }
+
+  /** Whether the key is known in either generation. */
+  has(key: K): boolean {
+    return this.#hot.has(key) || this.#cold.has(key);
+  }
+
+  clear(): void {
+    this.#hot.clear();
+    this.#cold.clear();
+  }
+
+  /** Entries held right now, across both generations. Needed by tests. */
+  get size(): number {
+    let total = this.#hot.size;
+    for (const key of this.#cold.keys()) if (!this.#hot.has(key)) total++;
+    return total;
+  }
 }

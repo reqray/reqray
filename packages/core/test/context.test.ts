@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { current, RequestScope, resolveOptions, runInScope, runOutsideScope } from '@loupe/core';
+import { current, RequestScope, resolveOptions, runInScope, runOutsideScope } from '@reqray/core';
 import { describe, expect, it } from 'vitest';
 
 const options = resolveOptions({ mode: 'development' });

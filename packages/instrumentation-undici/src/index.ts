@@ -1,5 +1,5 @@
 /**
- * `@loupe/instrumentation-undici` — interception of outgoing HTTP.
+ * `@reqray/instrumentation-undici` — interception of outgoing HTTP.
  *
  * **Interception method: `diagnostics_channel`.** This is the most preferred
  * option available: undici publishes the channels natively, so nothing is
@@ -15,15 +15,19 @@ import {
   type Callsite,
   current,
   fingerprintHttp,
+  guarded,
   handedCallsite,
   type Instrumentation,
+  patchMethod,
   type RequestScope,
   record,
+  redactQuery,
   resolveCallsite,
+  type Span,
   toSpanError,
-  warnOnce,
+  unpatchMethod,
   withHandedCallsite,
-} from '@loupe/core';
+} from '@reqray/core';
 
 /** What undici puts into the `undici:request:create` channel. */
 interface UndiciRequest {
@@ -40,6 +44,10 @@ interface CallState {
   readonly url: string;
   readonly callsite: Callsite | null;
   statusCode: number | null;
+  /** Whether the span was written when the headers arrived. */
+  recorded: boolean;
+  /** That span, unless the scope was already full. */
+  span: Span | null;
 }
 
 // Keyed by the undici request object itself: nothing is left behind once it is
@@ -51,22 +59,41 @@ function urlOf(request: UndiciRequest): string {
   return `${origin}${request.path ?? ''}`;
 }
 
+/** Writes the call's span as things stand: the time so far, the status known. */
+function write(state: CallState, error: unknown): void {
+  state.recorded = true;
+  state.span = record(state.scope, {
+    kind: 'http',
+    method: state.method,
+    url: state.url,
+    duration: performance.now() - state.startTime,
+    startTime: state.startTime,
+    statusCode: state.statusCode,
+    callsite: state.callsite,
+    error: toSpanError(error),
+  });
+}
+
 function finish(request: object, error: unknown): void {
   const state = inFlight.get(request);
   if (!state) return;
   inFlight.delete(request);
 
   try {
-    record(state.scope, {
-      kind: 'http',
-      method: state.method,
-      url: state.url,
-      duration: performance.now() - state.startTime,
-      startTime: state.startTime,
-      statusCode: state.statusCode,
-      callsite: state.callsite,
-      error: toSpanError(error),
-    });
+    if (!state.recorded) {
+      write(state, error);
+      return;
+    }
+    // Written at the headers; the body has now been read to its end, or
+    // failed on the way. The record copies spans when the request is
+    // finalized, so correcting this one in place is all it takes — and after
+    // that point the correction lands on an object nobody reads.
+    if (state.span) {
+      Object.assign(state.span, {
+        duration: performance.now() - state.startTime,
+        error: toSpanError(error),
+      });
+    }
   } catch {
     // Instrumentation must never break the host request.
   }
@@ -85,7 +112,9 @@ function onCreate(message: unknown): void {
 
     const details = request as UndiciRequest;
     const method = details.method ?? 'GET';
-    const url = urlOf(details);
+    // `?api_key=…` and presigned URLs are secrets in a place masking by
+    // header and body field never looked.
+    const url = redactQuery(urlOf(details), scope.options.redact);
 
     // No stack is captured here: the channel is published from the dispatcher,
     // so the user's frame is already off the synchronous stack. The `fetch`
@@ -98,6 +127,8 @@ function onCreate(message: unknown): void {
       url,
       callsite: handedCallsite()?.callsite ?? null,
       statusCode: null,
+      recorded: false,
+      span: null,
     });
   } catch {
     // Instrumentation must never break the host request.
@@ -112,6 +143,11 @@ function onHeaders(message: unknown): void {
     if (!state) return;
     const status = payload.response?.statusCode;
     if (typeof status === 'number') state.statusCode = status;
+    // Recorded now rather than at the trailers: those only come once the
+    // body has been read to its end, and `if (!res.ok) throw` never reads it.
+    // Such a call used to leave no span at all, and its time showed up as a
+    // stretch of the application's own code.
+    if (!state.recorded) write(state, undefined);
   } catch {
     // Instrumentation must never break the host request.
   }
@@ -135,14 +171,6 @@ const subscriptions: ReadonlyArray<readonly [string, (message: unknown) => void]
 ];
 
 let subscribed = false;
-
-/** "Already patched" marker: two copies of this module must not stack wrappers. */
-const PATCHED_FETCH = Symbol.for('loupe.patched.fetch');
-
-interface PatchedFetch {
-  (...args: unknown[]): unknown;
-  [PATCHED_FETCH]?: typeof globalThis.fetch;
-}
 
 /** Method and URL of a `fetch` call, best effort for every call shape. */
 function targetOf(input: unknown, init: unknown): [method: string, url: string] {
@@ -170,37 +198,31 @@ function targetOf(input: unknown, init: unknown): [method: string, url: string] 
  * through untouched.
  */
 function patchFetch(): void {
-  const holder = globalThis as { fetch?: typeof globalThis.fetch };
-  const original = holder.fetch;
-  if (typeof original !== 'function' || (original as PatchedFetch)[PATCHED_FETCH]) return;
-
-  const patched = function loupeFetch(
-    this: unknown,
-    input: Parameters<typeof globalThis.fetch>[0],
-    init?: Parameters<typeof globalThis.fetch>[1],
-  ) {
-    let handed: { callsite: Callsite | null } | null = null;
-    try {
-      const scope = current();
-      if (scope) {
-        const [method, url] = targetOf(input, init);
-        handed = { callsite: resolveCallsite(scope, fingerprintHttp(method, url), loupeFetch) };
-      }
-    } catch {
-      // Instrumentation must never break the host call.
-    }
-    if (!handed) return original.call(this, input, init);
-    return withHandedCallsite(handed, () => original.call(this, input, init));
-  } as typeof globalThis.fetch;
-
-  (patched as PatchedFetch)[PATCHED_FETCH] = original;
-  holder.fetch = patched;
-}
-
-function unpatchFetch(): void {
-  const holder = globalThis as { fetch?: typeof globalThis.fetch };
-  const original = (holder.fetch as PatchedFetch | undefined)?.[PATCHED_FETCH];
-  if (original) holder.fetch = original;
+  patchMethod(
+    globalThis,
+    'fetch',
+    (original: any) =>
+      function reqrayFetch(
+        this: unknown,
+        input: Parameters<typeof globalThis.fetch>[0],
+        init?: Parameters<typeof globalThis.fetch>[1],
+      ) {
+        let handed: { callsite: Callsite | null } | null = null;
+        try {
+          const scope = current();
+          if (scope) {
+            const [method, url] = targetOf(input, init);
+            handed = {
+              callsite: resolveCallsite(scope, fingerprintHttp(method, url), reqrayFetch),
+            };
+          }
+        } catch {
+          // Instrumentation must never break the host call.
+        }
+        if (!handed) return original.call(this, input, init);
+        return withHandedCallsite(handed, () => original.call(this, input, init));
+      },
+  );
 }
 
 /** Instrumentation for outgoing HTTP: undici and built-in `fetch`. */
@@ -214,28 +236,23 @@ export function instrumentUndici(): Instrumentation {
 
     apply() {
       if (subscribed) return;
-      try {
+      guarded('undici', () => {
         for (const [channel, handler] of subscriptions) {
           diagnosticsChannel.subscribe(channel, handler);
         }
         patchFetch();
         subscribed = true;
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        warnOnce('instrumentation.undici', `undici: instrumentation disabled: ${reason}`);
-      }
+      });
     },
 
     unapply() {
       if (!subscribed) return;
-      try {
+      guarded('undici', () => {
         for (const [channel, handler] of subscriptions) {
           diagnosticsChannel.unsubscribe(channel, handler);
         }
-        unpatchFetch();
-      } catch {
-        // Unsubscribing must never throw into the host application either.
-      }
+        unpatchMethod(globalThis, 'fetch');
+      });
       subscribed = false;
     },
   };

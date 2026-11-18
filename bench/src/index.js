@@ -1,15 +1,15 @@
 /**
  * Overhead benchmark.
  *
- * Loupe runs inside somebody else's application, on the hot path. These
+ * Reqray runs inside somebody else's application, on the hot path. These
  * numbers are the main argument for anyone putting it into production, and no
  * competitor publishes theirs — so the benchmark is part of the product, not
  * a formality.
  *
  * Every scenario runs against the real demo application from
  * `examples/fastify-postgres`, never against a synthetic handler, and each one
- * is measured three times in the same process lineage: Loupe off, Loupe in
- * production mode with 1% sampling, and Loupe in development mode at 100%.
+ * is measured three times in the same process lineage: Reqray off, Reqray in
+ * production mode with 1% sampling, and Reqray in development mode at 100%.
  *
  *   pnpm bench
  *   pnpm bench --scenario light
@@ -102,12 +102,12 @@ async function waitFor(url, timeoutMs) {
  * Starts a real Postgres in its own process.
  *
  * The database must not share the event loop with the application: otherwise
- * Loupe's work competes with the query engine and the measured overhead is an
+ * Reqray's work competes with the query engine and the measured overhead is an
  * artefact rather than a number. That rules out the demo's embedded PGlite,
  * which is fine for correctness tests and useless here.
  */
 async function startDatabase() {
-  const dataDir = mkdtempSync(join(tmpdir(), 'loupe-bench-'));
+  const dataDir = mkdtempSync(join(tmpdir(), 'reqray-bench-'));
   const port = await freePort();
   const postgres = new EmbeddedPostgres({
     databaseDir: dataDir,
@@ -166,17 +166,17 @@ async function startApp(mode, port, databaseUrl, collectorUrl) {
     // instruments, and the baseline must be a true baseline.
     mode === 'none'
       ? ['--expose-gc', 'src/index.js']
-      : ['--expose-gc', '--import', '@loupe/register', 'src/index.js'],
+      : ['--expose-gc', '--import', '@reqray/register', 'src/index.js'],
     {
       cwd: exampleRoot,
       env: {
         ...process.env,
         PORT: String(port),
-        LOUPE_MODE: mode,
+        REQRAY_MODE: mode,
         BENCH: '1',
         NODE_ENV: '',
         DATABASE_URL: databaseUrl,
-        ...(collectorUrl ? { LOUPE_SERVER_URL: collectorUrl } : {}),
+        ...(collectorUrl ? { REQRAY_SERVER_URL: collectorUrl } : {}),
       },
       stdio: ['ignore', 'ignore', 'pipe'],
     },
@@ -249,13 +249,13 @@ function report(scenario, results, rate, modes = MODES) {
   // being about overhead: they are about what the machine had left.
   if (rate > 0 && off.rps < rate * 0.95) {
     console.log(
-      `  ! the scenario cannot hold ${rate} rps even without Loupe (${off.rps.toFixed(0)}) — ` +
+      `  ! the scenario cannot hold ${rate} rps even without Reqray (${off.rps.toFixed(0)}) — ` +
         'the numbers below show the ceiling, not the budget',
     );
   }
   // `V8 heap` — median committed V8 heap while under load: this is the number
   // the memory budget is checked against. `retained` — live heap after a full
-  // GC, i.e. what Loupe holds on to; the README uses the same word. `rss` —
+  // GC, i.e. what Reqray holds on to; the README uses the same word. `rss` —
   // median under load, shown for honesty: it is a process high-water mark and
   // its deltas are dominated by GC timing.
   console.log(
@@ -290,7 +290,7 @@ if (scenarios.length === 0) {
 }
 
 console.log(
-  `Loupe overhead · ${scenarios.length} scenarios × ${modes.length} modes · ` +
+  `Reqray overhead · ${scenarios.length} scenarios × ${modes.length} modes · ` +
     `${args.duration}s measured after ${WARMUP_SECONDS}s of warm-up · ` +
     `${args.rate > 0 ? `${args.rate} rps` : 'unlimited'} · ${CONNECTIONS} connections`,
 );

@@ -1,6 +1,6 @@
 # Demo: Fastify + Postgres with a deliberate N+1
 
-The application that shows what Loupe exists for.
+The application that shows what Reqray exists for.
 
 ## Running
 
@@ -11,19 +11,19 @@ docker compose up --build
 ```
 
 The first build is not fast: dependencies are installed and the packages are
-built inside the image, because `node --import @loupe/register` loads the built
+built inside the image, because `node --import @reqray/register` loads the built
 file, not the sources.
 
 **Without Docker** — the database comes up embedded:
 
 ```bash
 pnpm build                                        # once
-pnpm --filter @loupe/example-fastify-postgres start
+pnpm --filter @reqray/example-fastify-postgres start
 ```
 
 The embedded database is PGlite — Postgres compiled to WebAssembly — behind a
 socket server. It speaks the same wire protocol, so the application talks to it
-with the ordinary `pg` driver, and Loupe instruments it exactly as it would a
+with the ordinary `pg` driver, and Reqray instruments it exactly as it would a
 real server.
 
 Variables: `PORT` (default 3000), `HOST` (default `127.0.0.1`,
@@ -38,8 +38,8 @@ docker compose -f docker-compose.staging.yml up --build
 # panel: http://localhost:4300/auth?token=staging-secret
 ```
 
-The same without Docker: `npx @loupe/server` in one terminal,
-`LOUPE_MODE=staging pnpm --filter @loupe/example-fastify-postgres start` —
+The same without Docker: `npx @reqray/server` in one terminal,
+`REQRAY_MODE=staging pnpm --filter @reqray/example-fastify-postgres start` —
 in another.
 
 ## What to look at
@@ -47,12 +47,12 @@ in another.
 The fastest way — fill the panel with ready-made "human" traffic and watch:
 
 ```bash
-pnpm --filter @loupe/example-fastify-postgres traffic
+pnpm --filter @reqray/example-fastify-postgres traffic
 ```
 
 | Route | What it shows |
 |---|---|
-| `/_loupe/` | the panel itself |
+| `/_reqray/` | the panel itself |
 | `/api/orders` | **deliberate N+1**: 1 query for the orders and one per each |
 | `/api/orders/eager` | the same data with a single `IN (…)` — for comparison |
 | `/api/orders/flaky` | **flaky**: every other time fast or with an N+1 — food for the compare button |
@@ -87,16 +87,16 @@ returns the same data without the loop: compare the two records in the panel.
 ## Why start through `node --import`
 
 ```
-node --import @loupe/register src/index.js
+node --import @reqray/register src/index.js
 ```
 
 The loader hooks must be in place before the application loads the driver,
 otherwise there is nothing left to intercept. If started without `--import`,
-Loupe says so honestly at startup:
+Reqray says so honestly at startup:
 
 ```
-✘ pg    found, but loaded before loupe
-        → start with `node --import @loupe/register`
+✘ pg    found, but loaded before reqray
+        → start with `node --import @reqray/register`
 ```
 
 ## Why not Prisma
@@ -104,7 +104,7 @@ Loupe says so honestly at startup:
 The directory was called `fastify-prisma` in the original architecture. It
 turned out the ORM adds nothing to the demonstration here: Prisma 7 connects to
 the database only through a driver adapter, and `@prisma/adapter-pg` executes
-queries with plain node-postgres — so Loupe sees exactly the same thing. On top
+queries with plain node-postgres — so Reqray sees exactly the same thing. On top
 of that, Prisma drags in a client generation step and a TypeScript build,
 because the Prisma 7 generator emits `.ts`. The demo must start with a single
 command, so plain `pg` it is.

@@ -1,5 +1,5 @@
-import { RequestScope, resolveOptions, runInScope } from '@loupe/core';
-import { instrumentPg } from '@loupe/instrumentation-pg';
+import { RequestScope, resolveOptions, runInScope } from '@reqray/core';
+import { instrumentPg } from '@reqray/instrumentation-pg';
 import { describe, expect, it } from 'vitest';
 import { createFakePg, type FakeResult } from './fixtures/fake-pg.js';
 
@@ -225,6 +225,21 @@ describe('boundary behavior', () => {
     await runInScope(scope, () => new pg.Client().query('SELECT 1'));
 
     expect(dbSpans(scope)).toHaveLength(1);
+  });
+
+  it('finds the classes under `default`, where an ESM import of a CJS build puts them', async () => {
+    // `import pg from 'pg'` with no ESM wrapper: the hook is handed a
+    // namespace holding only `default`. Nothing used to be patched, while the
+    // startup report said pg was instrumented.
+    const pg = createFakePg();
+    const instrumentation = instrumentPg();
+    instrumentation.apply({ default: pg });
+
+    const scope = makeScope();
+    await runInScope(scope, () => new pg.Client().query('SELECT 1'));
+    expect(dbSpans(scope)).toHaveLength(1);
+
+    instrumentation.unapply?.({ default: pg });
   });
 
   it('after unapply the behavior is fully original', async () => {

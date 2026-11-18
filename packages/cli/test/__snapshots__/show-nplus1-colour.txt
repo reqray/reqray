@@ -1,0 +1,44 @@
+⟨39⟩  GET /api/orders⟨/⟩⟨90⟩   200⟨/⟩⟨39⟩   275ms⟨/⟩⟨90⟩   09:41:02.184   #8974   from orders.spec.ts:42 › lists orders⟨/⟩
+
+⟨90⟩  TIME                         275ms   52ms sql   214ms external   1.2ms cache   8.2ms your code⟨/⟩
+
+⟨90⟩  WATERFALL                    61 spans, 2 of them duplicated⟨/⟩
+⟨90⟩                                     0ms      69ms       138ms      206ms    275ms⟨/⟩
+⟨90⟩                                     ├──────────┼──────────┼──────────┼──────────┤⟨/⟩
+⟨90⟩  mw    ⟨/⟩⟨90⟩cors                        ⟨/⟩ ⟨90⟩▏⟨/⟩                                              ⟨39⟩  0.4ms⟨/⟩
+⟨90⟩  mw    ⟨/⟩⟨90⟩helmet                      ⟨/⟩ ⟨90⟩▏⟨/⟩                                              ⟨39⟩  0.3ms⟨/⟩
+⟨90⟩  mw    ⟨/⟩⟨90⟩auth.verifyJwt              ⟨/⟩ ⟨90⟩██⟨/⟩                                             ⟨39⟩  5.4ms⟨/⟩
+⟨90⟩  mw    ⟨/⟩⟨90⟩body-parser.json            ⟨/⟩ ⟨90⟩▏⟨/⟩                                              ⟨39⟩  0.7ms⟨/⟩
+⟨90⟩  fn    ⟨/⟩⟨39⟩orders.list                 ⟨/⟩  ⟨36⟩├──────────────────────────────────────────┤⟨/⟩  ⟨39⟩  269ms⟨/⟩
+⟨90⟩  cache ⟨/⟩⟨39⟩  user:8812:permissions     ⟨/⟩  ⟨37⟩▏⟨/⟩                                             ⟨39⟩  0.3ms⟨/⟩
+⟨90⟩  cache ⟨/⟩⟨39⟩  feature-flags:checkout-v3 ⟨/⟩  ⟨37⟩▏⟨/⟩                                             ⟨39⟩  0.2ms⟨/⟩
+⟨90⟩  sql   ⟨/⟩⟨39⟩  SELECT users WHERE id=$1  ⟨/⟩  ⟨32⟩▏⟨/⟩                                             ⟨39⟩  2.1ms⟨/⟩
+⟨90⟩  sql   ⟨/⟩⟨39⟩  SELECT orders ORDER BY cr…⟨/⟩  ⟨32⟩██⟨/⟩                                            ⟨39⟩  8.6ms⟨/⟩
+⟨90⟩  sql   ⟨/⟩⟨39⟩  47× SELECT line_items WHE…⟨/⟩   ⟨32⟩███████⟨/⟩                                      ⟨39⟩ 41.2ms⟨/⟩ ⟨93⟩N+1⟨/⟩
+⟨90⟩  http  ⟨/⟩⟨39⟩  api.stripe.com /v1/charges⟨/⟩          ⟨33⟩███████████████████⟨/⟩                   ⟨39⟩  118ms⟨/⟩
+⟨90⟩  cache ⟨/⟩⟨39⟩  feature-flags:checkout-v3 ⟨/⟩                             ⟨37⟩▏⟨/⟩                  ⟨39⟩  0.2ms⟨/⟩ ⟨33⟩DUP⟨/⟩
+⟨90⟩  http  ⟨/⟩⟨39⟩  api.stripe.com /v1/charges⟨/⟩                             ⟨33⟩████████████████⟨/⟩   ⟨39⟩ 96.0ms⟨/⟩ ⟨33⟩DUP⟨/⟩
+⟨90⟩  cache ⟨/⟩⟨39⟩  orders:8812:page1         ⟨/⟩                                             ⟨37⟩▏⟨/⟩  ⟨39⟩  0.5ms⟨/⟩
+⟨90⟩  mw    ⟨/⟩⟨90⟩serialize + gzip            ⟨/⟩                                             ⟨90⟩▏⟨/⟩  ⟨39⟩  1.4ms⟨/⟩
+
+⟨90⟩  FINDINGS                     3⟨/⟩
+
+  ⟨33⟩! ⟨/⟩⟨93⟩N+1   ⟨/⟩⟨39⟩47 identical queries in a loop                                     ⟨/⟩⟨39⟩  41.2ms⟨/⟩⟨90⟩   15% of total⟨/⟩
+⟨39⟩        SELECT * FROM line_items WHERE order_id = $1⟨/⟩
+⟨90⟩        services/orders.js:118⟨/⟩
+⟨90⟩        fix   ⟨/⟩⟨39⟩eager-load line_items with a single IN (…) query⟨/⟩
+
+  ⟨33⟩! ⟨/⟩⟨93⟩DUP   ⟨/⟩⟨39⟩2 identical outbound calls                                         ⟨/⟩⟨39⟩  96.0ms⟨/⟩⟨90⟩   35% of total⟨/⟩
+⟨39⟩        GET https://api.stripe.com/v1/charges?customer=cus_QxT1⟨/⟩
+⟨90⟩        clients/stripe.js:40⟨/⟩
+⟨90⟩        fix   ⟨/⟩⟨39⟩memoize within the request scope⟨/⟩
+
+⟨90⟩    dup   2 identical cache reads for one key                                               ⟨/⟩⟨90⟩   0.4ms⟨/⟩
+⟨90⟩        cache.get feature-flags:checkout-v3   middleware/flags.js:14⟨/⟩
+
+⟨90⟩  RESPONSE                     200   application/json   4.1 KB   166 rows   etag W/"105b-7Yl1dK+8"⟨/⟩
+⟨90⟩        server-timing   db;dur=52.1   cache;dur=0.8   ext;dur=214.0⟨/⟩
+⟨90⟩        body   ⟨/⟩⟨39⟩{"data":[{"id":8812,"reference":"ORD-2026-8812","total_cents":12900,"currency":"EUR…⟨/⟩
+
+⟨36⟩  reqray show 8974 --body⟨/⟩⟨90⟩        the whole response body⟨/⟩
+⟨36⟩  reqray show 8974 --sql⟨/⟩⟨90⟩         all 49 queries with their callsites⟨/⟩

@@ -5,7 +5,6 @@
  * application memory and has no right to grow without bound.
  */
 export class RingBuffer<T> implements Iterable<T> {
-  /** How many items fit. */
   readonly capacity: number;
 
   #items: (T | undefined)[];
@@ -15,7 +14,7 @@ export class RingBuffer<T> implements Iterable<T> {
 
   constructor(capacity: number) {
     if (!Number.isInteger(capacity) || capacity < 1) {
-      throw new RangeError(`loupe: buffer capacity must be an integer ≥ 1, got ${capacity}`);
+      throw new RangeError(`reqray: buffer capacity must be an integer ≥ 1, got ${capacity}`);
     }
     this.capacity = capacity;
     this.#items = new Array<T | undefined>(capacity);

@@ -1,12 +1,10 @@
 // Same as esm-app.mjs, but a CommonJS app.
-const { getDiagnostics, renderDiagnostics } = require('@loupe/core');
+const { getDiagnostics, isPatched, renderDiagnostics } = require('@reqray/core');
 const pg = require('pg');
-
-const PATCHED = Symbol.for('loupe.patched.pg');
 
 console.log(
   JSON.stringify({
-    patched: Boolean(pg.Client.prototype[PATCHED]),
+    patched: isPatched(pg.Client.prototype, 'query'),
     diagnostics: renderDiagnostics(getDiagnostics()),
   }),
 );

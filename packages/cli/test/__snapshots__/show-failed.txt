@@ -1,0 +1,17 @@
+  POST /api/orders   500   2.14s   09:41:02.184   #9012
+
+  TIME                         2.14s   12ms sql   2.13s your code
+
+  WATERFALL                    2 spans
+                                     0ms      535ms      1.07s      1.60s    2.14s
+                                     ├──────────┼──────────┼──────────┼──────────┤
+  fn    orders.create                ├───────────────────────────────────────────┤    2.14s
+  sql     INSERT orders              ▏                                               12.0ms
+  —       uninstrumented             █████████████████████████████████████████████    2.13s
+
+  RESPONSE                     500   application/json
+
+  TypeError: Cannot read properties of undefined (reading 'currency')
+  services/pricing.js:61
+
+  reqray show 9012 --sql        the query it ran, and where from

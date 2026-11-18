@@ -33,7 +33,7 @@ beforeAll(() => {
   // The hooks are installed via `--import`, which needs the built file, not
   // the sources. Build once, on demand, if there is no build yet.
   if (existsSync(distEntry)) return;
-  execFileSync('pnpm', ['--filter', '@loupe/register', 'build'], {
+  execFileSync('pnpm', ['--filter', '@reqray/register', 'build'], {
     cwd: `${packageRoot}../..`,
     stdio: 'inherit',
     timeout: 180_000,
@@ -61,13 +61,13 @@ describe('auto-instrumentation via node --import', () => {
     expect(diagnostics).toContain('✔ undici (built-in)');
   });
 
-  it('honestly reports a driver loaded before Loupe', () => {
+  it('honestly reports a driver loaded before Reqray', () => {
     const result = run([`${fixtures}/too-late-app.cjs`, distEntry]);
 
     expect(result.patched).toBe(false);
     expect(result.diagnostics).toContain('✘ pg');
-    expect(result.diagnostics).toContain('found, but loaded before loupe');
-    expect(result.diagnostics).toContain('node --import @loupe/register');
+    expect(result.diagnostics).toContain('found, but loaded before reqray');
+    expect(result.diagnostics).toContain('node --import @reqray/register');
   });
 });
 

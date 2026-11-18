@@ -156,6 +156,40 @@ export function redactValue(value: unknown, options: ResolvedRedactOptions): unk
 }
 
 /**
+ * Masks the values of sensitive parameters in a query string.
+ *
+ * `token=abc` in a URL is the same secret as `"token": "abc"` in a body, so
+ * the same field patterns apply. Accepts a bare query or a whole URL: only
+ * what follows the first `?` is touched, and a fragment is left where it was.
+ */
+export function redactQuery(text: string, options: ResolvedRedactOptions): string {
+  const start = text.indexOf('?') + 1;
+  const hash = text.indexOf('#', start);
+  const end = hash === -1 ? text.length : hash;
+  const query = text.slice(start, end);
+  // The common case: nothing to mask, nothing to allocate.
+  if (!sensitivePatternIn(query, options.body)) return text;
+
+  const masked = query
+    .split('&')
+    .map((pair) => {
+      const equals = pair.indexOf('=');
+      if (equals === -1) return pair;
+      let name = pair.slice(0, equals);
+      try {
+        name = decodeURIComponent(name);
+      } catch {
+        // A name that does not decode is matched as written.
+      }
+      return isSensitiveField(name, options.body)
+        ? `${pair.slice(0, equals)}=${options.replaceWith}`
+        : pair;
+    })
+    .join('&');
+  return text.slice(0, start) + masked + text.slice(end);
+}
+
+/**
  * Flattens headers into `name → value` pairs with masking applied.
  *
  * Arrays of values (several `set-cookie`) are joined with commas — the panel

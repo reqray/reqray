@@ -1,0 +1,17 @@
+  GET /api/users/me   200   12ms   09:41:02.184   #8975
+
+  TIME                         12ms   2.1ms sql   0.3ms cache   10ms your code
+
+  WATERFALL                    4 spans
+                                     0ms 3.1ms 6.2ms 9.3ms 12ms
+                                     ├─────┼─────┼─────┼─────┤
+  mw    cors                         ▏                            0.2ms
+  fn    users.me                     ├──────────────────────┤    12.0ms
+  sql     SELECT users WHERE id=$1   ████                         2.1ms
+  cache   session:8812                    ██                      0.3ms
+
+  RESPONSE                     200   application/json   182 B   1 rows
+        body   {"id":8812,"email":"ada@example.com"}
+
+  reqray show 8975 --body        the whole response body
+  reqray show 8975 --sql         the query it ran, and where from

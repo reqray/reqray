@@ -1,0 +1,14 @@
+   TIME         METHOD PATH                    DUR FLAGS
+   09:41:00.912 GET    /health               1.2ms
+   09:41:01.244 GET    /api/users/me          12ms
+   09:41:02.184 GET    /api/orders            47ms
+   09:41:02.410 GET    /static/app.js        0.8ms
+   09:41:03.077 POST   /api/orders           118ms
+   09:41:04.512 GET    /api/products?…        61ms
+   09:41:05.980 PATCH  /api/…/8812/status     38ms
+   09:41:09.660 DELETE /api/…/items/3         21ms
+!  09:42:10.184 GET    /api/orders           512ms N+1
+!  09:42:12.184 GET    /api/report           604ms SLOW
+   09:42:13.184 GET    /api/profile/1        9.4ms TEST
+!! 09:43:02.184 POST   /api/orders           2.14s 500
+!  09:44:01.184 GET    /api/…/logs?…         318ms

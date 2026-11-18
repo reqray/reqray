@@ -1,8 +1,27 @@
 {
-  "name": "@loupe/register",
+  "name": "@reqray/register",
   "version": "0.0.0",
-  "description": "Loader hooks (CJS + ESM) for automatic Loupe instrumentation.",
+  "description": "Loader hooks (CJS + ESM) for automatic Reqray instrumentation.",
   "license": "MIT",
+  "keywords": [
+    "nodejs",
+    "debugging",
+    "profiling",
+    "n+1",
+    "sql",
+    "observability",
+    "devtools",
+    "fastify",
+    "express",
+    "nestjs"
+  ],
+  "homepage": "https://github.com/reqray/reqray#readme",
+  "bugs": "https://github.com/reqray/reqray/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reqray/reqray.git",
+    "directory": "packages/register"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -33,11 +52,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@loupe/core": "workspace:^",
-    "@loupe/instrumentation-pg": "workspace:^",
-    "@loupe/transport-memory": "workspace:^",
-    "@loupe/dashboard": "workspace:^",
-    "@loupe/instrumentation-undici": "workspace:^",
+    "@reqray/core": "workspace:^",
+    "@reqray/instrumentation-pg": "workspace:^",
+    "@reqray/instrumentation-ioredis": "workspace:^",
+    "@reqray/store-memory": "workspace:^",
+    "@reqray/dashboard": "workspace:^",
+    "@reqray/instrumentation-undici": "workspace:^",
     "import-in-the-middle": "^3.3.3",
     "require-in-the-middle": "^8.0.1",
     "semver": "^7.8.5"

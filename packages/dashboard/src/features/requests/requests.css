@@ -1,0 +1,1014 @@
+/* Request list, empty state and the status bar. */
+
+.requests {
+  display: grid;
+  /* The strip, the filters, the column heads, the list, the status bar. The
+     strip is `auto` rather than a number: it grew an axis under it, and a row
+     pinned to a height silently crops whatever is added inside it. */
+  grid-template-rows: auto 44px 32px minmax(0, 1fr) 30px;
+  height: 100%;
+  overflow: hidden;
+  /* The new-requests banner anchors to this box, not to the scroller. */
+  position: relative;
+}
+
+/* ── Timeline scrubber ───────────────────────────────────────────────── */
+
+.timeline {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+
+/* The strip and the axis under it, as one column. */
+.timeline-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Tall enough to have a shape.
+ *
+ * At thirty pixels the strip was a row of ticks: it could say that something
+ * happened and not what shape it had. */
+.timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg3);
+  letter-spacing: 0.02em;
+}
+
+.timeline-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  flex: none;
+  /* Wide enough for the readout — "02:20 · 262 requests · 8 failed" — on one
+     line: a wrapped hint reads as a broken layout. */
+  width: 236px;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.timeline-chart {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  /* Not `flex: 1`: inside a column that means "grow to fill the height",
+     which sets the basis to zero and overrides the height set below. The
+     width comes from the column around it. */
+  flex: none;
+  min-width: 0;
+  height: 62px;
+  padding: 4px 0 0;
+  cursor: crosshair;
+  /* The drag is the gesture; the browser must not steal it for scrolling. */
+  touch-action: none;
+}
+
+.tl-bucket {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.tl-bucket[data-dim="true"] {
+  opacity: 0.28;
+}
+
+.tl-seg {
+  display: block;
+  width: 100%;
+}
+
+.tl-err {
+  background: var(--err);
+}
+.tl-slow {
+  background: var(--warn);
+}
+.tl-rest {
+  background: var(--line);
+}
+
+.tl-window {
+  position: absolute;
+  top: 4px;
+  bottom: 3px;
+  border-left: 1px solid var(--acc);
+  border-right: 1px solid var(--acc);
+  background: oklch(0.72 0.11 232 / 0.1);
+  pointer-events: none;
+}
+
+.tl-reset {
+  align-self: center;
+  flex: none;
+  font-size: 12px;
+}
+
+/* ── Pin and comparison marks ────────────────────────────────────────── */
+
+.cell-marks {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+
+/* Their own hit targets inside the row button: the row opens the detail, the
+   marks do their own thing. */
+.mark {
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mark:hover {
+  color: var(--acc);
+}
+
+/* ── Comparison bar ──────────────────────────────────────────────────── */
+
+.cmp-bar {
+  position: absolute;
+  bottom: 42px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 13px;
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.cmp-bar .btn-secondary[disabled] {
+  color: var(--fg3);
+  cursor: default;
+}
+
+/* ── New-requests banner ─────────────────────────────────────────────── */
+
+.new-banner {
+  position: absolute;
+  /* Just inside the scrolling area, clear of the column header. */
+  top: 150px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 5px 12px;
+  border: 0;
+  background: var(--acc);
+  color: var(--bg);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.new-banner:hover {
+  filter: brightness(1.12);
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 10px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+}
+
+/* The chips scroll when they run out of room; the search field, the rules
+   pill and `clear` stay reachable outside that region — and the popover has
+   somewhere to hang, which an overflow container would have clipped. */
+.filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  /* Room for the chips' focus ring inside the scroller. */
+  padding: 4px 0;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  width: 330px;
+  height: 30px;
+  padding: 0 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+
+.search-hint {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg3);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  outline: none;
+}
+
+/* Shared by the column header and every row, so they cannot drift apart. */
+.row-grid {
+  display: grid;
+  grid-template-columns: 4px 32px 62px minmax(0, 1fr) 52px 40px 168px 104px 60px 112px;
+  gap: 10px;
+  padding: 0 10px 0 0;
+  align-items: center;
+}
+
+.row-head {
+  /* 10px more on the right: see `scrollbar-gutter` on .rows. */
+  padding-right: 20px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line3);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+/* Header cells are buttons; strip the chrome so they still read as labels.
+   Shared with the Routes table, which sorts the same way. */
+.sort-head {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--t-fast) ease-out;
+}
+
+.sort-head.cell-right {
+  text-align: right;
+}
+
+.sort-head:hover,
+.sort-head[aria-pressed="true"] {
+  color: var(--fg);
+}
+
+.sort-dir {
+  margin-left: 3px;
+  font-size: 10px;
+}
+
+.rows {
+  overflow-y: auto;
+  /* Reserve the scrollbar always, so the columns do not jump by 10px the
+     moment the list grows past one screen. The header pays the same 10px
+     back in its right padding — a spacer grid track would also pick up the
+     column gap and overshoot. */
+  scrollbar-gutter: stable;
+}
+
+/* The end of the loaded list, and the way further back. Reads as a row
+   rather than a button: it is part of the log, not an action on it. */
+.load-more {
+  display: block;
+  width: 100%;
+  height: var(--row);
+  border: 0;
+  border-bottom: 1px solid var(--line2);
+  background: transparent;
+  color: var(--fg3);
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    color var(--t-fast) ease-out,
+    background-color var(--t-fast) ease-out;
+}
+
+.load-more:hover {
+  color: var(--fg);
+  background: var(--bg2);
+}
+
+.row {
+  height: var(--row);
+  /* Fainter than --line on purpose: the table must read as a log, not as
+     a stack of cards. */
+  border-bottom: 1px solid var(--line2);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  border-left: 0;
+  border-right: 0;
+  border-top: 0;
+  background: transparent;
+  color: inherit;
+  transition: background-color var(--t-fast) ease-out;
+}
+
+/* ── Highlight rule tints ────────────────────────────────────────────── */
+
+/* Deliberately faint: a tint is a nudge for the eye scanning the list, not a
+   second status column. Hover and selection are declared after these, so they
+   always win. */
+.row[data-rule="slow_external"] {
+  background: oklch(0.68 0.12 25 / 0.14);
+}
+.row[data-rule="server_error"] {
+  background: oklch(0.68 0.12 25 / 0.1);
+}
+.row[data-rule="n_plus_one"] {
+  background: oklch(0.78 0.09 82 / 0.12);
+}
+.row[data-rule="chatty_sql"] {
+  background: oklch(0.78 0.09 82 / 0.08);
+}
+.row[data-rule="from_test"] {
+  background: oklch(0.72 0.11 232 / 0.1);
+}
+
+/* Keyboard selection — the one inset that remains. Severity moved into the
+   gutter, which is a column of its own and survives any row background. */
+.row[data-tick="acc"] {
+  box-shadow: inset 2px 0 0 0 var(--acc);
+}
+
+/* The primary scanning cue: red for errors and blown budgets, amber for any
+   other finding, nothing otherwise. Full row height, at the frame edge. */
+.row-gutter {
+  align-self: stretch;
+}
+
+.row-gutter[data-grade="err"] {
+  background: var(--err-bar);
+}
+
+.row-gutter[data-grade="warn"] {
+  background: var(--warn-bar);
+}
+
+/* A duration is a length first and a number second. */
+.cell-duration {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dur-track {
+  width: 88px;
+  height: 6px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.dur-fill {
+  display: block;
+  height: 100%;
+  background: var(--fg4);
+  transition: width var(--t-fast) ease-out;
+}
+
+.dur-fill[data-tone="warn"] {
+  background: var(--warn-bar);
+}
+
+.dur-fill[data-tone="err"] {
+  background: var(--err-bar);
+}
+
+/* The processor bar shares the duration's track and yardstick, so the two
+   read as one comparison: a long bar beside a short one is a request that
+   waited, two long bars are a request that worked. */
+.cell-cost {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cell-cost .dur-track {
+  width: 44px;
+}
+
+.cpu-fill {
+  display: block;
+  height: 100%;
+  background: var(--fg4);
+  transition: width var(--t-fast) ease-out;
+}
+
+.cpu-fill[data-tone="warn"] {
+  background: var(--warn-bar);
+}
+
+.cpu-fill[data-tone="err"] {
+  background: var(--err-bar);
+}
+
+/* A collapsed burst's multiplier, in the tag position. */
+.burst-tag {
+  padding: 1.5px 4px;
+  border: 1px solid var(--line3);
+  border-radius: 2px;
+  color: var(--fg3);
+  font-size: 9.5px;
+}
+
+/* The way back: sits above the expanded members, quiet until hovered. */
+.burst-strip {
+  display: block;
+  width: 100%;
+  padding: 3px 10px 3px 46px;
+  border: 0;
+  border-bottom: 1px solid var(--line2);
+  background: var(--inset);
+  color: var(--fg3);
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.burst-strip:hover {
+  color: var(--acc);
+}
+
+.row:hover {
+  background: var(--bg3);
+}
+
+.row[data-selected="true"] {
+  background: var(--sel);
+}
+
+.row[data-selected="true"]:hover {
+  background: var(--selh);
+}
+
+/* An arrival: it slides the last few pixels into place and flashes once.
+   Both at once rather than in sequence — a row that moves for 180ms and
+   then starts glowing reads as two events, and it was one. */
+.row[data-fresh="true"] {
+  animation:
+    row-in var(--t-slow) var(--ease-glide),
+    flash 1.4s ease-out;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes flash {
+  from {
+    background: oklch(0.72 0.11 232 / 0.28);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+/* The question, named where the answer is empty. */
+.rows-empty-terms {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rows-empty-term {
+  padding: 2px 7px;
+  border: 1px solid var(--line3);
+  border-radius: 3px;
+  color: var(--fg2);
+  font-size: 11px;
+}
+
+.cell-method {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cell-right {
+  text-align: right;
+}
+
+.cell-center {
+  text-align: center;
+}
+
+.flag {
+  display: inline-block;
+  padding: 1px 3px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+/* ── Highlight rules popover ─────────────────────────────────────────── */
+
+/* Saved views: the same pill-and-popover shape the rules wear. */
+.views {
+  position: relative;
+  flex: none;
+}
+
+.views-pop {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 4;
+  width: 300px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.views-head {
+  padding: 8px 10px 6px;
+}
+
+.views-empty {
+  padding: 4px 10px 8px;
+  font-size: 11px;
+}
+
+.views-row {
+  display: flex;
+  align-items: center;
+}
+
+.views-apply {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.views-apply:hover {
+  background: var(--bg3);
+  color: var(--acc);
+}
+
+.views-delete {
+  flex: none;
+  padding: 5px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--fg4);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.views-delete:hover {
+  color: var(--err);
+}
+
+.views-save {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line2);
+}
+
+.views-save input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--line3);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.rules {
+  position: relative;
+  flex: none;
+}
+
+.rules-pop {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 4;
+  width: 320px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.rules-head {
+  padding: 8px 10px 6px;
+}
+
+.rules-row {
+  display: grid;
+  grid-template-columns: 14px 10px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-fast) ease-out;
+}
+
+.rules-row:hover {
+  background: var(--bg3);
+}
+
+.rules-swatch {
+  width: 10px;
+  height: 10px;
+}
+
+.rules-swatch[data-tone="err"] {
+  background: var(--err);
+}
+.rules-swatch[data-tone="warn"] {
+  background: var(--warn);
+}
+.rules-swatch[data-tone="acc"] {
+  background: var(--acc);
+}
+
+.rules-foot {
+  padding: 6px 10px 9px;
+  border-top: 1px solid var(--line2);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg3);
+}
+
+/* The one status-bar number that is a door rather than a reading. The full
+   interactive bar is stage 53; findings goes first because its tab exists. */
+.sb-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: color var(--t-fast) ease-out;
+}
+
+.sb-link:hover,
+.sb-link[aria-pressed="true"] {
+  color: var(--acc);
+}
+
+.sb-link.sb-warn:hover,
+.sb-link.sb-warn[aria-pressed="true"] {
+  color: var(--warn);
+}
+
+.sb-link.sb-err:hover,
+.sb-link.sb-err[aria-pressed="true"] {
+  color: var(--err);
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 10px;
+  background: var(--bg2);
+  border-top: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg3);
+}
+
+/* ── Empty state ─────────────────────────────────────────────────────── */
+
+.empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 24px;
+}
+
+.empty-card {
+  width: 600px;
+  max-width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  animation: rise-in var(--t-slow) ease-out;
+}
+
+.empty-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg2);
+}
+
+.empty-body {
+  padding: 18px 14px 16px;
+}
+
+.empty-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.empty-text {
+  margin: 8px 0 0;
+  max-width: 44ch;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg2);
+}
+
+.empty-label {
+  margin-top: 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--fg3);
+}
+
+/* Inset, not raised: darker than the card it sits in. */
+.snippet {
+  margin-top: 8px;
+  padding: 9px 11px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Set from the Routes screen; clicking it takes the filter back off. */
+.route-filter {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--acc);
+  cursor: pointer;
+}
+
+/* ── Time range ──────────────────────────────────────────────────────── */
+
+.timerange {
+  position: relative;
+}
+
+.timerange-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  width: 288px;
+  /* The calendar makes this tall; on a short window it scrolls rather than
+     running off the bottom with the apply button on it. */
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  padding: 8px 0 0;
+  background: var(--bg2);
+  border: 1px solid var(--line3);
+  animation: rise-in var(--t-fast) ease-out;
+}
+
+/* One column, unlike the rules rows it sits beside: a named stretch is a
+   label and nothing else. */
+.timerange-row {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timerange-row:hover {
+  background: var(--bg3);
+}
+
+/* The typed ends, under the named ones: the same question, exactly. */
+.timerange-exact {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--line2);
+}
+
+.timerange-field {
+  display: grid;
+  gap: 3px;
+}
+
+.timerange-field input {
+  padding: 4px 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.timerange-field input:focus-visible {
+  outline: 1px solid var(--acc);
+}
+
+/* A filter that matched nothing. Inside the list, so the filters that caused
+   it stay where they are — and with the way back on the same line. */
+.rows-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line2);
+}
+
+/* ── Calendar ────────────────────────────────────────────────────────── */
+
+.calendar {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line2);
+}
+
+.calendar-head {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 24px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.calendar-month {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg2);
+}
+
+.calendar-step {
+  height: 22px;
+  border: 0;
+  background: transparent;
+  color: var(--fg3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.calendar-step:hover {
+  color: var(--fg);
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+}
+
+.calendar-weekday {
+  padding-bottom: 3px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--fg3);
+}
+
+.calendar-day {
+  height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--fg2);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color var(--t-fast) ease-out;
+}
+
+.calendar-day:hover {
+  background: var(--bg3);
+}
+
+/* Padding from the months either side, and days the store has nothing for:
+   both are still clickable, just not worth looking at. */
+.calendar-day[data-outside="true"],
+.calendar-day[data-empty="true"] {
+  color: var(--fg3);
+  opacity: 0.55;
+}
+
+.calendar-day[data-selected="true"] {
+  background: var(--acc);
+  color: var(--bg);
+  opacity: 1;
+}
+
+.calendar-day[data-today="true"] {
+  box-shadow: inset 0 -2px 0 0 var(--acc);
+}
+
+.calendar-foot {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg3);
+}
+
+/* Held even when empty, so the block does not resize as the pointer crosses
+   the strip. */
+.tl-readout {
+  min-height: 1em;
+}
+
+/* The two strip controls, stacked at its right edge. */
+.tl-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  flex: none;
+}
+
+/* The way back to the whole history, offered only when the strip is showing
+   less than it. A link rather than a button: it changes what is drawn, not
+   what is recorded. */
+.tl-scope {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg3);
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+.tl-scope:hover {
+  color: var(--fg);
+}

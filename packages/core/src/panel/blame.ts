@@ -11,17 +11,11 @@
  */
 
 import { execFile } from 'node:child_process';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, resolve, sep } from 'node:path';
+import type { BlameLine } from '@reqray/protocol';
 import { warnOnce } from '../logger.js';
 
-/** What blame knows about one line. */
-export interface BlameLine {
-  /** Abbreviated commit hash. */
-  readonly sha: string;
-  readonly author: string;
-  /** Commit time, epoch ms. */
-  readonly at: number;
-}
+export type { BlameLine };
 
 const cache = new Map<string, BlameLine | null>();
 
@@ -79,7 +73,13 @@ export async function blameLine(
   line: number,
   cwd: string,
 ): Promise<BlameLine | null> {
-  if (!isAbsolute(file) || line < 1) return null;
+  if (!isAbsolute(file) || !Number.isInteger(line) || line < 1) return null;
+
+  // Inside the project, or blame becomes a way to ask which absolute paths on
+  // this machine are tracked, and by whom.
+  const root = resolve(cwd);
+  const target = resolve(file);
+  if (target !== root && !target.startsWith(root + sep)) return null;
 
   const key = `${file}:${line}`;
   const cached = cache.get(key);

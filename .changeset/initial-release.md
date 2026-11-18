@@ -1,18 +1,18 @@
 ---
-'@loupe/instrumentation-undici': minor
-'@loupe/instrumentation-prisma': minor
-'@loupe/transport-memory': minor
-'@loupe/instrumentation-pg': minor
-'@loupe/dashboard': minor
-'@loupe/register': minor
-'@loupe/fastify': minor
-'@loupe/express': minor
-'@loupe/core': minor
+'@reqray/instrumentation-undici': minor
+'@reqray/instrumentation-prisma': minor
+'@reqray/store-memory': minor
+'@reqray/instrumentation-pg': minor
+'@reqray/dashboard': minor
+'@reqray/register': minor
+'@reqray/fastify': minor
+'@reqray/express': minor
+'@reqray/core': minor
 ---
 
 First release, aimed at local development.
 
-Automatic instrumentation via `node --import @loupe/register`: Fastify
+Automatic instrumentation via `node --import @reqray/register`: Fastify
 and Express, the `pg` driver (and therefore Prisma 7, which goes through
 node-postgres), outgoing HTTP via `diagnostics_channel`.
 

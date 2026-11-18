@@ -113,7 +113,6 @@ function evaluate(
   };
 }
 
-/** The sequential-HTTP detector itself. */
 export const sequentialHttp: Detector<SequentialHttpOptions> = {
   id: 'sequential_http',
 

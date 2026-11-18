@@ -4,14 +4,9 @@
  * the wire-level truth (real Postgres) lives in the pg integration suite.
  */
 
-import {
-  analyzePlan,
-  ExplainError,
-  type RecordedRequest,
-  registerExplainTarget,
-  resetExplainTargets,
-  runExplain,
-} from '@loupe/core';
+import { type RecordedRequest, registerExplainTarget, timingOf, weightOf } from '@reqray/core';
+import { analyzePlan, ExplainError, runExplain } from '@reqray/core/panel';
+import { resetExplainTargets } from '@reqray/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 const SEQ_SCAN_PLAN = {
@@ -33,7 +28,7 @@ const SEQ_SCAN_PLAN = {
 };
 
 function recordWith(span: Partial<Record<string, unknown>>): RecordedRequest {
-  return {
+  const base = {
     id: 'r1',
     method: 'GET',
     path: '/orders',
@@ -51,6 +46,8 @@ function recordWith(span: Partial<Record<string, unknown>>): RecordedRequest {
         rowCount: 150,
         source: 'pg',
         clientId: null,
+        connectionId: null,
+        waitMs: null,
         startedAt: 0,
         duration: 5,
         callsite: null,
@@ -68,6 +65,13 @@ function recordWith(span: Partial<Record<string, unknown>>): RecordedRequest {
     droppedSpans: 0,
     droppedLogs: 0,
     test: null,
+  };
+  return {
+    ...base,
+    timing: timingOf(base.spans, base.durationMs),
+    host: null,
+    weight: weightOf(base),
+    cost: null,
   };
 }
 
@@ -142,6 +146,31 @@ describe('running EXPLAIN', () => {
     expect(target.statements[0]).toContain('GENERIC_PLAN');
     // ANALYZE executes the query and must never appear.
     expect(target.statements[0]).not.toContain('ANALYZE');
+  });
+
+  it('refuses a record holding a second statement, and runs nothing', async () => {
+    // Reaching this needs an injection the application already has. What must
+    // not happen is EXPLAIN turning that into a write of its own.
+    const target = fakeTarget();
+    const id = registerExplainTarget(target);
+
+    await expect(
+      runExplain(recordWith({ clientId: id, sql: 'SELECT 1; DROP TABLE orders' }), 7),
+    ).rejects.toThrow(/more than one statement/);
+    expect(target.statements).toEqual([]);
+  });
+
+  it('a semicolon inside a literal is not a second statement', async () => {
+    // The check must not cry wolf: `'a;b'` is one ordinary query, and a guard
+    // that refuses to plan it is a guard people route around.
+    const target = fakeTarget();
+    const id = registerExplainTarget(target);
+
+    await runExplain(
+      recordWith({ clientId: id, sql: "SELECT * FROM notes WHERE body = 'a;b';" }),
+      7,
+    );
+    expect(target.statements[0]).toContain("body = 'a;b'");
   });
 
   it('an unknown span is a 404, not a 500', async () => {

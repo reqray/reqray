@@ -1,5 +1,5 @@
 /**
- * `@loupe/instrumentation-prisma` — not implemented, and largely not needed.
+ * `@reqray/instrumentation-prisma` — not implemented, and largely not needed.
  *
  * ## Prisma 7 queries are already visible
  *
@@ -8,7 +8,7 @@
  * adapter is `@prisma/adapter-pg`, and it runs every query as plain
  * node-postgres — `client.query({ name, text, values, rowMode: 'array' })`.
  *
- * That is a shape `@loupe/instrumentation-pg` already handles, so Prisma
+ * That is a shape `@reqray/instrumentation-pg` already handles, so Prisma
  * queries land in the waterfall, group by fingerprint and feed the N+1
  * detector without any Prisma-specific code. Verified against a real Postgres
  * engine in `packages/instrumentation-pg/test/pg.integration.test.ts`.
@@ -39,7 +39,7 @@
  * The remaining candidate worth evaluating first is `@prisma/instrumentation`
  * as a span source — a ready-made OpenTelemetry instrumentation. It would
  * supply model and operation names, at the cost of a bridge from OTel spans
- * to the Loupe model.
+ * to the Reqray model.
  */
 
 export {};

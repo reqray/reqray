@@ -1,0 +1,173 @@
+/* The findings tab: occurrences grouped into a short, ordered work list. */
+
+/* `-screen` because the detail page has a `.findings` block of its own. */
+.findings-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+}
+
+.findings-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+
+.findings-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.findings-empty {
+  padding: 24px 4px;
+  font-size: 12px;
+}
+
+.findings-empty p {
+  margin: 0 0 12px;
+}
+
+/* The detectors that were looking, one per line: an empty list that does not
+   say who was watching reads as a clean bill of health. */
+.findings-watchers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+
+/* One shared template for the header and every row. */
+.findings-grid {
+  display: grid;
+  grid-template-columns: 4px 74px minmax(0, 1fr) 220px 76px 130px 170px 64px;
+  gap: 10px;
+  align-items: baseline;
+  padding-right: 14px;
+}
+
+.findings-cols {
+  padding-top: 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line3);
+}
+
+.findings-table {
+  font-size: 12.5px;
+}
+
+.findings-row {
+  border-bottom: 1px solid var(--line2);
+}
+
+.findings-line {
+  width: 100%;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-fast) ease-out;
+}
+
+.findings-line:hover {
+  background: var(--bg3);
+}
+
+/* A muted pattern stays on the list but stops asking for attention. */
+.findings-row[data-state="muted"] .findings-line {
+  opacity: 0.55;
+}
+
+/* The scanning cue: how loud a pattern is, before any words are read. */
+.findings-gutter {
+  align-self: stretch;
+  border-radius: 0;
+}
+
+.findings-gutter[data-grade="loud"] {
+  background: var(--err-bar);
+}
+
+.findings-gutter[data-grade="warn"] {
+  background: var(--warn-bar);
+}
+
+.findings-gutter[data-grade="quiet"] {
+  background: transparent;
+}
+
+.findings-cost {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* Recoverable time against the loudest pattern in view. */
+.findings-bar {
+  width: 60px;
+  height: 6px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.findings-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--warn-bar);
+}
+
+.findings-state {
+  color: var(--fg3);
+}
+
+.findings-state[data-state="new"] {
+  color: var(--acc);
+}
+
+.findings-state[data-state="fixed"] {
+  color: var(--ok);
+}
+
+/* The expanded pattern: examples, the hint, and the ways out. */
+.findings-open {
+  padding: 4px 14px 14px 14px;
+  background: var(--inset);
+  animation: rise-in var(--t-slow) var(--ease-glide);
+}
+
+.findings-hint {
+  margin: 8px 0 10px;
+  max-width: 90ch;
+  font-size: 12px;
+}
+
+.findings-routes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.findings-examples {
+  margin-bottom: 12px;
+}
+
+.findings-examples .label {
+  margin-bottom: 4px;
+}
+
+.findings-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}

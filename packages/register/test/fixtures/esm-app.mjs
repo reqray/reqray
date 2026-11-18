@@ -1,13 +1,14 @@
 // An app that loads pg with a plain ESM import — that is, AFTER
-// `--import @loupe/register` has installed the hooks.
-import { getDiagnostics, renderDiagnostics } from '@loupe/core';
+// `--import @reqray/register` has installed the hooks.
+import { getDiagnostics, isPatched, renderDiagnostics } from '@reqray/core';
 import pg from 'pg';
-
-const PATCHED = Symbol.for('loupe.patched.pg');
 
 console.log(
   JSON.stringify({
-    patched: Boolean(pg.Client.prototype[PATCHED]),
+    // Asked through core rather than by naming a symbol here: how a patch is
+    // marked is the kit's business, and a fixture that spells the marker out
+    // is a second copy of that rule.
+    patched: isPatched(pg.Client.prototype, 'query'),
     diagnostics: renderDiagnostics(getDiagnostics()),
   }),
 );

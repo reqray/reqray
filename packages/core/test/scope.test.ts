@@ -1,10 +1,5 @@
-import {
-  RequestScope,
-  record,
-  resetLearnedCallsites,
-  resolveCallsite,
-  resolveOptions,
-} from '@loupe/core';
+import { RequestScope, record, resolveCallsite, resolveOptions } from '@reqray/core';
+import { resetLearnedCallsites } from '@reqray/core/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 
 afterEach(() => {
@@ -163,5 +158,22 @@ describe('record', () => {
     record(scope, dbSpan('SELECT 1', 2, 1_001));
 
     expect(scope.spans).toHaveLength(1);
+  });
+
+  it('cannot see the panel’s settings from inside a request', () => {
+    // Not a runtime assertion — a compile-time one. The scope carries
+    // `RecordingOptions`, so an instrumentation wrapper cannot reach the panel
+    // gate (a closure somebody wrote to authenticate people) or the retention
+    // policy's file handles. If that boundary is ever widened back, the
+    // expected error stops happening and TypeScript fails this line for having
+    // an unused `@ts-expect-error`.
+    const scope = makeScope();
+
+    // @ts-expect-error the recording path has no business reading the panel
+    scope.options.panel;
+    // @ts-expect-error nor the retention policy
+    scope.options.retention;
+
+    expect(scope.options.stack).toBeDefined();
   });
 });

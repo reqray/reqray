@@ -13,16 +13,28 @@
 /** SQL statement type. Detectors only look at `select`. */
 export type SqlOperation = 'select' | 'insert' | 'update' | 'delete' | 'other';
 
+import { globalSlot, TwoGenerationCache } from './state.js';
+
 /**
- * Fingerprint cache cap.
+ * Cache cap.
  *
  * Applications that build SQL dynamically can produce an unbounded set of
- * strings, so the cache is cleared wholesale once the cap is hit — cheaper and
- * more predictable than an LRU.
+ * strings, so both caches have a ceiling. See {@link TwoGenerationCache} for
+ * why hitting the ceiling is not a `clear()`: an application sitting just over
+ * the limit would otherwise throw away its hottest entries with its coldest
+ * and re-scan every statement until the cache refilled.
  */
 const CACHE_LIMIT = 5_000;
 
-import { loupeState } from './state.js';
+const fingerprints = globalSlot(
+  'sql.fingerprints',
+  () => new TwoGenerationCache<string, string>(CACHE_LIMIT),
+);
+
+const operations = globalSlot(
+  'sql.operations',
+  () => new TwoGenerationCache<string, SqlOperation>(CACHE_LIMIT),
+);
 
 const CHAR_TAB = 9;
 const CHAR_LF = 10;
@@ -262,13 +274,12 @@ function collapseLists(sql: string): string {
  * to `?`, comments are dropped and whitespace is reduced to single spaces.
  */
 export function fingerprintSql(sql: string): string {
-  const fingerprintCache = loupeState().fingerprints;
-  const cached = fingerprintCache.get(sql);
+  const cache = fingerprints();
+  const cached = cache.get(sql);
   if (cached !== undefined) return cached;
 
   const result = collapseLists(scan(sql));
-  if (fingerprintCache.size >= CACHE_LIMIT) fingerprintCache.clear();
-  fingerprintCache.set(sql, result);
+  cache.set(sql, result);
   return result;
 }
 
@@ -289,8 +300,8 @@ const STATEMENT_KEYWORDS: Readonly<Record<string, SqlOperation>> = {
  * Accepts a fingerprint or any SQL — comments and literals are handled.
  */
 export function sqlOperation(sql: string): SqlOperation {
-  const operationCache = loupeState().operations;
-  const cached = operationCache.get(sql);
+  const cache = operations();
+  const cached = cache.get(sql);
   if (cached !== undefined) return cached;
 
   // The scan is idempotent: on an already normalized fingerprint it changes
@@ -338,14 +349,12 @@ export function sqlOperation(sql: string): SqlOperation {
     if (!insideCte) break;
   }
 
-  if (operationCache.size >= CACHE_LIMIT) operationCache.clear();
-  operationCache.set(sql, result);
+  cache.set(sql, result);
   return result;
 }
 
 /** Clears the caches. Needed by tests and benchmarks. */
 export function clearSqlCaches(): void {
-  const state = loupeState();
-  state.fingerprints.clear();
-  state.operations.clear();
+  fingerprints().clear();
+  operations().clear();
 }

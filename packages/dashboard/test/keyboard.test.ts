@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isTypingTarget, nextIndex, scrollTopFor } from '../src/keyboard';
+import { isTypingTarget, nextIndex, scrollTopFor } from '../src/app/keyboard';
 
 describe('keyboard helpers', () => {
   describe('shortcuts stay out of the way while typing', () => {

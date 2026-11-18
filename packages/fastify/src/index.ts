@@ -1,5 +1,5 @@
 /**
- * `@loupe/fastify` — Fastify adapter.
+ * `@reqray/fastify` — Fastify adapter.
  *
  * Built on the regular hooks: that is the official extension point with a
  * stable contract, so nothing has to be patched. The start and the end of a
@@ -10,32 +10,33 @@
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import {
-  createLoupe,
-  createPanelHandler,
+  createReqray,
   enterScope,
-  type Loupe,
-  type LoupeInit,
   markAdapterActive,
-  type PanelSource,
   REPLAY_HEADER,
+  type Reqray,
+  type ReqrayInit,
   type RequestScope,
   reportInstrumentation,
   warnOnce,
-} from '@loupe/core';
-import { memoryTransport } from '@loupe/transport-memory';
+} from '@reqray/core';
+import { createPanelHandler, panelSourceFor } from '@reqray/core/panel';
+import { memoryTransport } from '@reqray/store-memory';
 import type { FastifyInstance, FastifyPluginCallback, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 
 declare module 'fastify' {
   interface FastifyInstance {
-    /** Loupe runtime: transport and options. */
-    readonly loupe: Loupe;
+    /** Reqray runtime: transport and options. */
+    readonly reqray: Reqray;
   }
 }
 
 /** State that lives from `onRequest` through to `onResponse`. */
 interface RequestState {
   readonly scope: RequestScope;
+  /** Kept because `onRequestAbort` is handed the request alone. */
+  readonly reply: FastifyReply;
   readonly handlerSpan: number;
   readonly query: string | null;
   responseBody: unknown;
@@ -49,32 +50,16 @@ const states = new WeakMap<FastifyRequest, RequestState>();
 /**
  * Directory with the built dashboard.
  *
- * Resolved optionally: without `@loupe/dashboard` installed the API still
+ * Resolved optionally: without `@reqray/dashboard` installed the API still
  * works, only the UI route reports that the panel is incomplete.
  */
 function dashboardAssets(): string | undefined {
   try {
-    const manifest = createRequire(import.meta.url).resolve('@loupe/dashboard/package.json');
+    const manifest = createRequire(import.meta.url).resolve('@reqray/dashboard/package.json');
     return join(dirname(manifest), 'dist');
   } catch {
     return undefined;
   }
-}
-
-/**
- * The panel can only work with a transport that is also a store.
- * An HTTP transport to an external collector has no request list — the panel
- * then runs as a separate process, which is v0.2.
- */
-function asPanelSource(transport: unknown): PanelSource | null {
-  const candidate = transport as Partial<PanelSource> | null;
-  if (!candidate) return null;
-  const complete =
-    typeof candidate.list === 'function' &&
-    typeof candidate.get === 'function' &&
-    typeof candidate.clear === 'function' &&
-    typeof candidate.subscribe === 'function';
-  return complete ? (candidate as PanelSource) : null;
 }
 
 function headerValue(raw: string | string[] | undefined): string | null {
@@ -87,8 +72,8 @@ function splitQuery(url: string): [path: string, query: string | null] {
   return index === -1 ? [url, null] : [url.slice(0, index), url.slice(index + 1)];
 }
 
-const plugin: FastifyPluginCallback<LoupeInit> = (app: FastifyInstance, init, done) => {
-  // The standalone mode in @loupe/register stands down once an adapter exists.
+const plugin: FastifyPluginCallback<ReqrayInit> = (app: FastifyInstance, init, done) => {
+  // The standalone mode in @reqray/register stands down once an adapter exists.
   markAdapterActive();
   reportInstrumentation({
     name: 'fastify',
@@ -97,10 +82,18 @@ const plugin: FastifyPluginCallback<LoupeInit> = (app: FastifyInstance, init, do
     ok: true,
   });
 
-  const runtime = createLoupe({ ...init, transport: init.transport ?? memoryTransport() });
-  app.decorate('loupe', runtime);
+  const runtime = createReqray({ ...init, transport: init.transport ?? memoryTransport() });
+  app.decorate('reqray', runtime);
 
-  const source = asPanelSource(runtime.transport);
+  // A disabled Reqray costs nothing per request, and the only way to mean that
+  // literally is to register no hooks at all. Checking `enabled` inside a hook
+  // would still allocate the argument object it is checked from.
+  if (!runtime.options.enabled) {
+    done();
+    return;
+  }
+
+  const source = panelSourceFor(runtime.transport, runtime.options);
   const panel = source
     ? createPanelHandler({ source, options: runtime.options, assetsDir: dashboardAssets() })
     : null;
@@ -119,14 +112,14 @@ const plugin: FastifyPluginCallback<LoupeInit> = (app: FastifyInstance, init, do
     });
   }
 
-  app.addHook('onRequest', (request, _reply, next) => {
+  app.addHook('onRequest', (request, reply, next) => {
     const [path, query] = splitQuery(request.url);
     const scope = runtime.begin({
       method: request.method,
       path,
       replayId: headerValue(request.headers[REPLAY_HEADER]),
     });
-    // Loupe is disabled — no allocations, no state kept.
+    // Reqray is disabled — no allocations, no state kept.
     if (!scope) {
       next();
       return;
@@ -139,6 +132,7 @@ const plugin: FastifyPluginCallback<LoupeInit> = (app: FastifyInstance, init, do
 
     states.set(request, {
       scope,
+      reply,
       handlerSpan: scope.openSpan('handler', `${request.method} ${path}`),
       query,
       responseBody: undefined,
@@ -161,13 +155,13 @@ const plugin: FastifyPluginCallback<LoupeInit> = (app: FastifyInstance, init, do
     next();
   });
 
-  app.addHook('onResponse', (request: FastifyRequest, reply: FastifyReply, next) => {
+  // Called from whichever hook ends the request, and once: the state is
+  // taken out of the map on the way in.
+  const complete = (request: FastifyRequest): void => {
     const state = states.get(request);
-    if (!state) {
-      next();
-      return;
-    }
+    if (!state) return;
     states.delete(request);
+    const reply = state.reply;
 
     try {
       state.scope.closeSpan(state.handlerSpan);
@@ -184,6 +178,17 @@ const plugin: FastifyPluginCallback<LoupeInit> = (app: FastifyInstance, init, do
       const reason = error instanceof Error ? error.message : String(error);
       warnOnce('fastify.finish', `request not recorded: ${reason}`);
     }
+  };
+
+  app.addHook('onResponse', (request: FastifyRequest, _reply: FastifyReply, next) => {
+    complete(request);
+    next();
+  });
+
+  // A client that gave up gets no response, so `onResponse` never fires — and
+  // the request it gave up on is the slow one, the one worth seeing.
+  app.addHook('onRequestAbort', (request: FastifyRequest, next) => {
+    complete(request);
     next();
   });
 
@@ -203,17 +208,17 @@ export function recordFailure(request: unknown, error: unknown): void {
 }
 
 /**
- * Loupe plugin for Fastify.
+ * Reqray plugin for Fastify.
  *
  * @example
  * ```ts
- * await app.register(loupe);
- * // app.loupe — the runtime: transport, options
+ * await app.register(reqray);
+ * // app.reqray — the runtime: transport, options
  * ```
  */
-export const loupe = fp(plugin, {
+export const reqray = fp(plugin, {
   fastify: '5.x',
-  name: '@loupe/fastify',
+  name: '@reqray/fastify',
 });
 
-export default loupe;
+export default reqray;

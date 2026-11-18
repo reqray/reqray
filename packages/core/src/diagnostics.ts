@@ -6,39 +6,30 @@
  * requests" issues.
  */
 
+import type { DiagnosticEntry } from '@reqray/protocol';
 import { info } from './logger.js';
-import { loupeState } from './state.js';
+import { globalBox, globalSlot } from './state.js';
 
-/** One report line: one package Loupe tried to instrument. */
-export interface DiagnosticEntry {
-  /** Package name as the application sees it: `fastify`, `pg`, `prisma`. */
-  readonly name: string;
-  /** Package version, if it could be resolved. */
-  readonly version?: string | undefined;
-  /** Package is built into Node — no version is printed. */
-  readonly builtin?: boolean;
-  /** What is captured: "requests", "SQL", "outgoing HTTP". */
-  readonly captures: string;
-  readonly ok: boolean;
-  /** Why it failed. Printed instead of `captures` for failed entries. */
-  readonly reason?: string | undefined;
-  /** What the user should do to fix it. */
-  readonly hint?: string | undefined;
-}
+/** The instrumentation report, collected at startup. */
+const report = globalSlot('diagnostics.report', () => [] as DiagnosticEntry[]);
+
+const printed = globalBox('diagnostics.printed', false);
+
+export type { DiagnosticEntry };
 
 /** Records the outcome of an attempt to instrument a package. */
 export function reportInstrumentation(entry: DiagnosticEntry): void {
-  loupeState().diagnostics.push(entry);
+  report().push(entry);
 }
 
 /** Everything collected so far. */
 export function getDiagnostics(): readonly DiagnosticEntry[] {
-  return loupeState().diagnostics;
+  return report();
 }
 
 /** Clears the report. Needed by tests. */
 export function clearDiagnostics(): void {
-  loupeState().diagnostics.length = 0;
+  report().length = 0;
 }
 
 function labelOf(entry: DiagnosticEntry): string {
@@ -54,7 +45,7 @@ function labelOf(entry: DiagnosticEntry): string {
  */
 export function renderDiagnostics(report: readonly DiagnosticEntry[]): string {
   const active = report.some((entry) => entry.ok);
-  const header = active ? 'loupe  instrumentation active' : 'loupe  instrumentation not attached';
+  const header = active ? 'reqray  instrumentation active' : 'reqray  instrumentation not attached';
   if (report.length === 0) return header;
 
   const width = Math.max(...report.map((entry) => labelOf(entry).length)) + 4;
@@ -70,9 +61,22 @@ export function renderDiagnostics(report: readonly DiagnosticEntry[]): string {
   return lines.join('\n');
 }
 
-/** Prints the report. Called once when Loupe initializes. */
-export function printDiagnostics(): void {
-  info(renderDiagnostics(loupeState().diagnostics));
+/**
+ * What to say under the report about a panel with no gate.
+ *
+ * Such a panel answers its own machine and nobody else, and the person who
+ * finds that out is looking at a 403 from inside a dev container or behind a
+ * local proxy. Said at startup, it is a line read once instead of an issue.
+ */
+export const UNGATED_PANEL_NOTE = [
+  '  panel answers this machine only: no gate is set',
+  "  → from a container, a proxy or another machine: reqray({ panel: { gate: 'open' } })",
+].join('\n');
+
+/** Prints the report. Called once when Reqray initializes. */
+export function printDiagnostics(note?: string): void {
+  const text = renderDiagnostics(report());
+  info(note ? `${text}\n${note}` : text);
 }
 
 /**
@@ -80,14 +84,14 @@ export function printDiagnostics(): void {
  *
  * An application may have several adapters, but only needs one report.
  */
-export function printDiagnosticsOnce(): void {
-  const state = loupeState();
-  if (state.printed) return;
-  state.printed = true;
-  printDiagnostics();
+export function printDiagnosticsOnce(note?: string): void {
+  const once = printed();
+  if (once.value) return;
+  once.value = true;
+  printDiagnostics(note);
 }
 
 /** Allows the report to be printed again. Needed by tests. */
 export function resetDiagnosticsPrinted(): void {
-  loupeState().printed = false;
+  printed().value = false;
 }

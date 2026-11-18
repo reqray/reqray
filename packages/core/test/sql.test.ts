@@ -1,4 +1,5 @@
-import { clearSqlCaches, fingerprintSql, sqlOperation } from '@loupe/core';
+import { fingerprintSql, sqlOperation } from '@reqray/core';
+import { clearSqlCaches } from '@reqray/core/testing';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 beforeEach(() => {

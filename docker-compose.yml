@@ -1,11 +1,12 @@
 # Demo application with a real Postgres.
 #
 #   docker compose up --build
-#   open http://localhost:3000/api/orders   — the route with a deliberate N+1
-#   open http://localhost:3000/_loupe/      — the panel
+#   open http://localhost:3100/_reqray/      — the panel, already full: the demo
+#                                             calls its own routes on a loop
 #
-# Postgres runs in its own container rather than embedded in the process. That
-# is the shape a real deployment has, and the shape overhead is measured in.
+# Postgres and Redis run in their own containers rather than embedded in the
+# process. That is the shape a real deployment has, and the shape overhead is
+# measured in.
 
 services:
   postgres:
@@ -22,15 +23,41 @@ services:
     # so nothing is worth keeping, and the data directory layout changed in
     # Postgres 18 — a mount at the old path makes the image refuse to boot.
 
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # No mount either: a cache that survives a restart is not a cache, and the
+    # demo fills it on the first request anyway.
+
   demo:
     build:
       context: .
     ports:
-      - '3000:3000'
+      - '3100:3000'
     environment:
       HOST: 0.0.0.0
       PORT: '3000'
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      REDIS_URL: redis://redis:6379
+      # A history that outlives the container, and the same requests as a
+      # file per day — which is what the Retention card on the Project tab
+      # is about.
+      REQRAY_DB: /data/requests.db
+      REQRAY_LOG: /data/log
+      REQRAY_DAYS: '7'
+    volumes:
+      - reqray-data:/data
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  # Named rather than a bind mount: the demo is a demo, and nobody wants a
+  # directory of yesterday's JSON appearing in their checkout.
+  reqray-data:

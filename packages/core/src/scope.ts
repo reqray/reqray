@@ -6,9 +6,10 @@
  * `current()` and push spans into it.
  */
 
-import type { ResolvedOptions } from './config.js';
-import { loupeState } from './state.js';
-import type { LogEntry, Span, SpanError, SpanInput } from './types.js';
+import { samplesFor } from './callsite.js';
+import type { RecordingOptions } from './config.js';
+import { type CostMark, markCost } from './cost.js';
+import type { LabelSpanKind, LogEntry, Span, SpanError, SpanInput } from './types.js';
 
 /** Log lines one request may hold. Above it lines are counted, not stored. */
 const MAX_LOG_LINES = 200;
@@ -17,7 +18,7 @@ const MAX_LOG_LINES = 200;
 interface OpenFrame {
   readonly id: number;
   readonly parentId: number | null;
-  readonly kind: 'middleware' | 'handler';
+  readonly kind: LabelSpanKind;
   readonly label: string;
   readonly startTime: number;
 }
@@ -27,7 +28,7 @@ export interface RequestScopeInit {
   readonly id: string;
   readonly method: string;
   readonly path: string;
-  readonly options: ResolvedOptions;
+  readonly options: RecordingOptions;
   /** `performance.now()` at the request start. */
   readonly startTime?: number;
   /** `Date.now()` at the request start. */
@@ -46,9 +47,16 @@ export class RequestScope {
   readonly startTime: number;
   /** `Date.now()` at the request start. */
   readonly startedAt: number;
-  readonly options: ResolvedOptions;
+  readonly options: RecordingOptions;
   /** Replay id, if the request was launched from the panel. */
   readonly replayId: string | null;
+  /**
+   * The processor and concurrency reading taken when the request began.
+   *
+   * Subtracted when it ends; see `cost.ts` for what the difference is and is
+   * not allowed to claim.
+   */
+  readonly costMark: CostMark;
 
   /** Finished spans, in completion order. */
   readonly spans: Span[] = [];
@@ -70,6 +78,7 @@ export class RequestScope {
     this.startTime = init.startTime ?? performance.now();
     this.startedAt = init.startedAt ?? Date.now();
     this.replayId = init.replayId ?? null;
+    this.costMark = markCost();
   }
 
   /** Span the work is currently running inside of, or `null`. */
@@ -87,13 +96,12 @@ export class RequestScope {
    * them — measured at roughly a third of the application's throughput.
    * Later spans reuse what was learned; see `resolveCallsite`.
    */
-  shouldCaptureStack(fingerprint?: string): boolean {
+  shouldCaptureStack(fingerprint: string): boolean {
     const max = this.options.stack.maxPerFingerprint;
     if (max === Number.POSITIVE_INFINITY) return true;
     if (max <= 0) return false;
 
-    const known = loupeState().callsites.get(fingerprint ?? '');
-    return (known?.samples ?? 0) < max;
+    return samplesFor(fingerprint) < max;
   }
 
   /**
@@ -109,32 +117,50 @@ export class RequestScope {
     }
 
     const startTime = input.startTime ?? performance.now() - input.duration;
-    const common = {
-      id: this.#nextSpanId++,
-      parentId: this.currentSpanId,
-      startedAt: startTime - this.startTime,
-      duration: input.duration,
-      callsite: input.callsite ?? null,
-      error: input.error ?? null,
-    };
+    // The common fields are written into each branch rather than built once
+    // and spread. This runs per span — the most frequent call in core — and a
+    // spread is a second object and a full property copy on top of the first.
+    const id = this.#nextSpanId++;
+    const parentId = this.currentSpanId;
+    const startedAt = startTime - this.startTime;
+    const duration = input.duration;
+    // A span cannot know its own children while it is still running: the real
+    // figure is computed once, when the record is built.
+    const selfMs = duration;
+    const callsite = input.callsite ?? null;
+    const error = input.error ?? null;
 
     let span: Span;
     switch (input.kind) {
       case 'db':
         span = {
-          ...common,
+          id,
+          parentId,
+          startedAt,
+          duration,
+          selfMs,
+          callsite,
+          error,
           kind: 'db',
           sql: input.sql,
           fingerprint: input.fingerprint,
           rowCount: input.rowCount ?? null,
           source: input.source ?? null,
           clientId: input.clientId ?? null,
+          connectionId: input.connectionId ?? null,
+          waitMs: input.waitMs ?? null,
           values: input.values ?? null,
         };
         break;
       case 'http':
         span = {
-          ...common,
+          id,
+          parentId,
+          startedAt,
+          duration,
+          selfMs,
+          callsite,
+          error,
           kind: 'http',
           method: input.method,
           url: input.url,
@@ -143,15 +169,32 @@ export class RequestScope {
         break;
       case 'cache':
         span = {
-          ...common,
+          id,
+          parentId,
+          startedAt,
+          duration,
+          selfMs,
+          callsite,
+          error,
           kind: 'cache',
           operation: input.operation,
+          command: input.command ?? null,
           key: input.key,
           hit: input.hit ?? null,
         };
         break;
       default:
-        span = { ...common, kind: input.kind, label: input.label };
+        span = {
+          id,
+          parentId,
+          startedAt,
+          duration,
+          selfMs,
+          callsite,
+          error,
+          kind: input.kind,
+          label: input.label,
+        };
         break;
     }
 
@@ -166,7 +209,7 @@ export class RequestScope {
    * kicked in.
    * @internal
    */
-  openSpan(kind: 'middleware' | 'handler', label: string): number {
+  openSpan(kind: LabelSpanKind, label: string): number {
     if (this.spans.length + this.#open.length >= this.options.maxSpansPerRequest) {
       this.droppedSpans++;
       return -1;
@@ -202,6 +245,9 @@ export class RequestScope {
       label: frame.label,
       startedAt: frame.startTime - this.startTime,
       duration: performance.now() - frame.startTime,
+      // Replaced when the record is built; a container span's own time is
+      // almost never its duration, which is the point of measuring it.
+      selfMs: 0,
       callsite: null,
       error,
     };

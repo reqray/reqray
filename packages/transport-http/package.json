@@ -1,8 +1,27 @@
 {
-  "name": "@loupe/transport-http",
+  "name": "@reqray/transport-http",
   "version": "0.0.0",
-  "description": "Loupe HTTP transport: batches with backpressure to an external collector.",
+  "description": "Reqray HTTP transport: batches with backpressure to an external collector.",
   "license": "MIT",
+  "keywords": [
+    "nodejs",
+    "debugging",
+    "profiling",
+    "n+1",
+    "sql",
+    "observability",
+    "devtools",
+    "fastify",
+    "express",
+    "nestjs"
+  ],
+  "homepage": "https://github.com/reqray/reqray#readme",
+  "bugs": "https://github.com/reqray/reqray/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reqray/reqray.git",
+    "directory": "packages/transport-http"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -33,7 +52,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@loupe/core": "workspace:^"
+    "@reqray/core": "workspace:^",
+    "@reqray/protocol": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "catalog:",

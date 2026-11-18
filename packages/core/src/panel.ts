@@ -11,20 +11,9 @@
  */
 
 import type { ResolvedOptions } from './config.js';
+import type { PanelGate, PanelRequestContext } from './types.js';
 
-/** What is known about a panel request when access is checked. */
-export interface PanelRequestContext {
-  readonly headers: Readonly<Record<string, string | string[] | undefined>>;
-  readonly ip: string | null;
-}
-
-/**
- * Who is allowed into the panel.
- *
- * `'open'` is a deliberate "let everyone in": you can write it, but you can
- * never get it by default.
- */
-export type PanelGate = 'open' | ((context: PanelRequestContext) => boolean);
+export type { PanelGate, PanelRequestContext };
 
 /** Access error. A separate class so it can be caught in a test. */
 export class PanelGateError extends Error {
@@ -33,12 +22,12 @@ export class PanelGateError extends Error {
 
 function gateErrorMessage(mode: string): string {
   return [
-    `loupe: panel not mounted — NODE_ENV=${mode} does not count as local development.`,
+    `reqray: panel not mounted — NODE_ENV=${mode} does not count as local development.`,
     'The panel exposes request bodies, headers and SQL, so it must not open without a check.',
     'Set a gate:',
-    "  loupe({ panel: { gate: (ctx) => ctx.headers['x-loupe-token'] === process.env.LOUPE_TOKEN } })",
-    'Or disable the panel: loupe({ panel: false })',
-    "Or, if open access is a deliberate decision: loupe({ panel: { gate: 'open' } })",
+    "  reqray({ panel: { gate: (ctx) => ctx.headers['x-reqray-token'] === process.env.REQRAY_TOKEN } })",
+    'Or disable the panel: reqray({ panel: false })',
+    "Or, if open access is a deliberate decision: reqray({ panel: { gate: 'open' } })",
   ].join('\n');
 }
 
@@ -55,12 +44,31 @@ export function assertPanelAllowed(options: ResolvedOptions): void {
   throw new PanelGateError(gateErrorMessage(process.env['NODE_ENV'] ?? 'unset'));
 }
 
+const LOOPBACK_IP = /^(?:::ffff:)?127\.|^::1$/;
+const LOCAL_HOST = /^(?:localhost|[^.]+\.localhost|127(?:\.\d+){3}|\[::1\])(?::\d+)?$/i;
+
+/**
+ * Whether a request came from this machine, addressed to this machine.
+ *
+ * What stands in for a gate when none is set. "No gate" is granted to local
+ * development, and `NODE_ENV` is a poor witness of that: a server deployed
+ * without it reads as a laptop. The peer address is a better one. The `Host`
+ * check is for the page in the developer's own browser: a hostile domain
+ * re-pointed at 127.0.0.1 arrives from loopback, but still names itself.
+ */
+export function isLocalRequest(context: PanelRequestContext): boolean {
+  if (!context.ip || !LOOPBACK_IP.test(context.ip)) return false;
+  const host = context.headers['host'];
+  // HTTP/1.0 sends none, and no browser speaks it.
+  return host === undefined || (typeof host === 'string' && LOCAL_HOST.test(host));
+}
+
 /** Whether a particular request is let into the panel. */
 export function isPanelRequestAllowed(
   gate: PanelGate | null,
   context: PanelRequestContext,
 ): boolean {
-  if (!gate) return true;
+  if (!gate) return isLocalRequest(context);
   if (gate === 'open') return true;
   try {
     return gate(context) === true;

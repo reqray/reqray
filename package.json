@@ -1,5 +1,5 @@
 {
-  "name": "loupe",
+  "name": "reqray",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,8 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "bench": "pnpm --filter @loupe/bench start",
+    "bench": "pnpm --filter @reqray/bench start",
+    "reqray": "node packages/cli/dist/cli.js",
     "changeset": "changeset",
     "release": "pnpm build && changeset publish"
   },

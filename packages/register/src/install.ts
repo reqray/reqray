@@ -8,29 +8,17 @@
  * 4. nothing, but with a clear message at startup.
  *
  * The hooks must be installed before the drivers are loaded, hence the
- * recommended startup: `node --import @loupe/register`.
+ * recommended startup: `node --import @reqray/register`.
  */
 
 import { readFileSync } from 'node:fs';
 import { createRequire, register as registerLoader } from 'node:module';
 import { join, sep } from 'node:path';
-import { type Instrumentation, reportInstrumentation, warnOnce } from '@loupe/core';
-import { instrumentUndici } from '@loupe/instrumentation-undici';
+import { type Instrumentation, reportInstrumentation, warnOnce } from '@reqray/core';
 import { Hook as EsmHook, type HookFn as EsmHookFn } from 'import-in-the-middle';
 import { Hook as CjsHook } from 'require-in-the-middle';
 import { satisfies } from 'semver';
-import { registry } from './registry.js';
-
-/** Options for {@link register}. */
-export interface RegisterOptions {
-  /**
-   * Instrumentations specified explicitly by the user.
-   *
-   * They beat the registry and are not checked against a version range: once
-   * the user has named them, compatibility is their responsibility.
-   */
-  readonly instrumentations?: readonly Instrumentation[];
-}
+import { channelInstrumentations, registry } from './registry.js';
 
 const requireFrom = createRequire(import.meta.url);
 
@@ -64,27 +52,22 @@ function alreadyLoaded(moduleName: string): boolean {
   return false;
 }
 
-const LOADED_TOO_LATE_HINT = 'start with `node --import @loupe/register`';
+const LOADED_TOO_LATE_HINT = 'start with `node --import @reqray/register`';
 
 function applyTo(
   instrumentation: Instrumentation,
   exports: unknown,
   version: string | undefined,
-  explicit: boolean,
 ): void {
   // Silently patching an unknown major version is not allowed.
-  if (
-    !explicit &&
-    version &&
-    !satisfies(version, instrumentation.supportedVersions, { loose: true })
-  ) {
+  if (version && !satisfies(version, instrumentation.supportedVersions, { loose: true })) {
     reportInstrumentation({
       name: instrumentation.name,
       version,
       captures: instrumentation.captures ?? '',
       ok: false,
       reason: `version outside the supported range ${instrumentation.supportedVersions}`,
-      hint: 'update Loupe or register the instrumentation explicitly',
+      hint: 'update Reqray, or patch the module yourself: `instrumentation.apply(module)` checks no version',
     });
     return;
   }
@@ -114,35 +97,31 @@ function applyTo(
  * Installs the loader hooks and activates the instrumentations.
  *
  * Idempotent: a repeated call does nothing. Never throws — the application has
- * to start even if Loupe could not attach.
+ * to start even if Reqray could not attach.
+ *
+ * Takes no options. It used to accept a list of instrumentations to register
+ * explicitly, and never could honour it: importing this package calls
+ * `register()` on the spot, so a later call with a list returned at the first
+ * line. Explicit registration is an instrumentation's own `apply` — it needs
+ * no loader hook, which is exactly why it works in a bundle:
+ * `instrumentPg().apply(pg)`.
  */
-export function register(options: RegisterOptions = {}): void {
+export function register(): void {
   if (installed) return;
   installed = true;
 
   try {
-    // 1. Explicit registration overrides the registry.
-    const explicit = new Map<string, Instrumentation>();
-    for (const instrumentation of options.instrumentations ?? []) {
-      explicit.set(instrumentation.name, instrumentation);
-    }
+    const wanted = new Map<string, Instrumentation>();
+    for (const entry of registry) wanted.set(entry.module, entry.create());
 
-    const wanted = new Map<string, { instrumentation: Instrumentation; explicit: boolean }>();
-    for (const entry of registry) {
-      wanted.set(entry.module, { instrumentation: entry.create(), explicit: false });
-    }
-    for (const [name, instrumentation] of explicit) {
-      wanted.set(name, { instrumentation, explicit: true });
-    }
-
-    // 3. diagnostics_channel does not depend on the loader — enable it right away.
-    if (!explicit.has('undici')) {
-      const undici = instrumentUndici();
-      undici.apply(undefined);
+    // diagnostics_channel does not depend on the loader — enable it right away.
+    for (const create of channelInstrumentations) {
+      const instrumentation = create();
+      instrumentation.apply(undefined);
       reportInstrumentation({
-        name: undici.name,
+        name: instrumentation.name,
         builtin: true,
-        captures: undici.captures ?? '',
+        captures: instrumentation.captures ?? '',
         ok: true,
       });
     }
@@ -159,9 +138,9 @@ export function register(options: RegisterOptions = {}): void {
       wanted.delete(name);
       reportInstrumentation({
         name,
-        captures: target.instrumentation.captures ?? '',
+        captures: target.captures ?? '',
         ok: false,
-        reason: 'found, but loaded before loupe',
+        reason: 'found, but loaded before reqray',
         hint: LOADED_TOO_LATE_HINT,
       });
     }
@@ -175,7 +154,7 @@ export function register(options: RegisterOptions = {}): void {
     // signature accepts both that and `string | undefined` from the CJS hook.
     const onLoad = <T>(exports: T, name: string, basedir?: string): T => {
       const target = wanted.get(name);
-      if (target) applyTo(target.instrumentation, exports, versionAt(basedir), target.explicit);
+      if (target) applyTo(target, exports, versionAt(basedir));
       return exports;
     };
 
@@ -186,7 +165,7 @@ export function register(options: RegisterOptions = {}): void {
       registerLoader('import-in-the-middle/hook.mjs', import.meta.url);
       new EsmHook(hookable, onLoad as EsmHookFn);
     } catch (error) {
-      // ESM hooks require Loupe to be loaded via `--import`. Without them the
+      // ESM hooks require Reqray to be loaded via `--import`. Without them the
       // CJS interception remains — not a reason to fail.
       const reason = error instanceof Error ? error.message : String(error);
       warnOnce('register.esm', `ESM hooks not installed (${reason}); ${LOADED_TOO_LATE_HINT}`);

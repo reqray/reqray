@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { RequestRow } from '../src/api';
-import { DEFAULT_SORT, nextSort, sortRows } from '../src/sort';
+import type { RequestRow } from '../src/api/index';
+import { DEFAULT_SORT, nextSort, sortRows } from '../src/shared/list/sort';
 
 let seq = 0;
 
@@ -11,6 +11,8 @@ function row(overrides: Partial<RequestRow>): RequestRow {
     method: 'GET',
     path: `/api/${seq}`,
     query: null,
+    route: '/api/:id',
+    flag: null,
     status: 200,
     durationMs: 10,
     // Later rows are newer — the natural order of the live feed.
@@ -19,6 +21,11 @@ function row(overrides: Partial<RequestRow>): RequestRow {
     nPlusOne: false,
     findingCount: 0,
     hasError: false,
+    httpCount: 0,
+    cpuMs: null,
+    cpuShare: null,
+    pinned: false,
+    test: null,
     ...overrides,
   };
 }

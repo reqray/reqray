@@ -1,56 +1,43 @@
 /**
- * Loupe options and their resolution into a fully populated form.
+ * Reqray options and their resolution into a fully populated form.
  *
  * Everything environment-dependent (`NODE_ENV`, `process.cwd()`) is read
  * exactly once, in {@link resolveOptions}. The hot path only ever sees
  * {@link ResolvedOptions}.
  */
 
-import type { DuplicateCacheOptions, DuplicateHttpOptions } from './detectors/duplicates.js';
-import { duplicateCache, duplicateHttp } from './detectors/duplicates.js';
-import type { NPlusOneOptions } from './detectors/n-plus-one.js';
-import { nPlusOne } from './detectors/n-plus-one.js';
-import type { SequentialHttpOptions } from './detectors/sequential-http.js';
-import { sequentialHttp } from './detectors/sequential-http.js';
-import type { SlowBudgetOptions } from './detectors/slow-budget.js';
-import { slowBudget } from './detectors/slow-budget.js';
-import type { PanelGate } from './panel.js';
+import type { ReqrayMode, SamplingSettings, StackSettings } from '@reqray/protocol';
+import {
+  type DetectorKey,
+  type DetectorOptions,
+  detectorKeys,
+  detectors,
+} from './detectors/registry.js';
+import { warnOnce } from './logger.js';
+import type { RetentionPolicy } from './retention.js';
+import type { PanelGate } from './types.js';
 
 /** Operating mode. Affects stack capture and the share of retained requests. */
-export type LoupeMode = 'development' | 'production';
+export type { ReqrayMode };
 
 /**
  * Detector configuration.
  *
  * Each detector can be retuned by threshold or disabled entirely:
- * `loupe({ detect: { nPlusOne: { threshold: 10 } } })`.
+ * `reqray({ detect: { nPlusOne: { threshold: 10 } } })`.
+ *
+ * Derived from the registry rather than listed again: two lists of detectors
+ * cannot be kept in agreement by anything but attention, and the one that
+ * drifts is the one nothing runs.
  */
-export interface DetectOptions {
-  /** `false` disables the N+1 detector completely. */
-  readonly nPlusOne?: Partial<NPlusOneOptions> | false;
-  /** `false` disables the sequential-HTTP detector completely. */
-  readonly sequentialHttp?: Partial<SequentialHttpOptions> | false;
-  /** Identical outbound reads in one request. */
-  readonly duplicateHttp?: Partial<DuplicateHttpOptions> | false;
-  /** The same cache key read more than once in one request. */
-  readonly duplicateCache?: Partial<DuplicateCacheOptions> | false;
-  /** Wall-time budget for a request; `false` turns the check off. */
-  readonly slowBudget?: Partial<SlowBudgetOptions> | false;
-}
+export type DetectOptions = {
+  readonly [K in DetectorKey]?: Partial<DetectorOptions<K>> | false;
+};
 
-/** @see DetectOptions */
-export interface ResolvedDetectOptions {
-  /** `null` — detector disabled. */
-  readonly nPlusOne: NPlusOneOptions | null;
-  /** `null` — detector disabled. */
-  readonly sequentialHttp: SequentialHttpOptions | null;
-  /** `null` — detector disabled. */
-  readonly duplicateHttp: DuplicateHttpOptions | null;
-  /** `null` — detector disabled. */
-  readonly duplicateCache: DuplicateCacheOptions | null;
-  /** `null` — detector disabled. */
-  readonly slowBudget: SlowBudgetOptions | null;
-}
+/** @see DetectOptions — `null` for a detector somebody turned off. */
+export type ResolvedDetectOptions = {
+  readonly [K in DetectorKey]: DetectorOptions<K> | null;
+};
 
 /** Masking of sensitive data. Runs before the buffer write. */
 export interface RedactOptions {
@@ -61,7 +48,6 @@ export interface RedactOptions {
   readonly headers?: readonly string[];
   /** Request and response body fields whose values are replaced. */
   readonly body?: readonly string[];
-  /** What to replace with. */
   readonly replaceWith?: string;
   /** Values are not walked deeper than this nesting level. */
   readonly maxDepth?: number;
@@ -110,13 +96,8 @@ export interface SamplingOptions {
   readonly alwaysOnFinding?: boolean;
 }
 
-/** @see SamplingOptions */
-export interface ResolvedSamplingOptions {
-  readonly rate: number;
-  readonly slowMs: number;
-  readonly alwaysOnError: boolean;
-  readonly alwaysOnFinding: boolean;
-}
+/** @see SamplingOptions — the protocol's shape, so the panel cannot drift. */
+export type ResolvedSamplingOptions = SamplingSettings;
 
 /** Panel. `false` in the options disables mounting it entirely. */
 export interface PanelOptions {
@@ -135,12 +116,11 @@ export interface ResolvedPanelOptions {
   readonly gate: PanelGate | null;
 }
 
-/** Public Loupe options. */
-export interface LoupeOptions {
+export interface ReqrayOptions {
   /** Defaults to `NODE_ENV !== 'production'`. */
   readonly enabled?: boolean;
   /** Defaults to being derived from `NODE_ENV`. */
-  readonly mode?: LoupeMode;
+  readonly mode?: ReqrayMode;
   /** Size of the request ring buffer. */
   readonly bufferSize?: number;
   /** Hard cap on spans per request: protection against pathological requests. */
@@ -158,6 +138,16 @@ export interface LoupeOptions {
    * development it is opt-in and logs a warning.
    */
   readonly replay?: boolean;
+  /**
+   * Sample the stack, so a stretch of unaccounted time can name the function
+   * that burned it.
+   *
+   * Local development only by default, and gated for the same reason as
+   * replay: sampling is cheap — a few microseconds a request — but a profile
+   * names the application's own functions and files, which is a decision
+   * somebody makes rather than a default somebody discovers.
+   */
+  readonly profile?: boolean;
   /**
    * Allow running EXPLAIN on recorded queries from the panel.
    *
@@ -181,6 +171,15 @@ export interface LoupeOptions {
    */
   readonly logs?: boolean;
   /**
+   * Watch the event loop, and record how far behind it was on each request.
+   *
+   * On by default: it is one libuv histogram for the process, sampled on a
+   * timer rather than per request, and it is the only way to tell a slow
+   * route from a process that could not get scheduled. `false` turns it off
+   * and every screen that shows loop delay simply has nothing to show.
+   */
+  readonly hostMetrics?: boolean;
+  /**
    * Collect SQL parameter values into spans.
    *
    * `false` in every mode, including development: positional values carry no
@@ -189,30 +188,80 @@ export interface LoupeOptions {
    * `redact.maxStringLength`, and are never substituted into EXPLAIN.
    */
   readonly collectSqlValues?: boolean;
+  /**
+   * How long anything kept is kept for.
+   *
+   * The same object the stores are given, so the number the panel shows is
+   * the number they evict by. Without one, each store keeps to its own
+   * limits and the panel reports them as fixed.
+   */
+  readonly retention?: RetentionPolicy;
+  /**
+   * The request log on disk, when there is one.
+   *
+   * Only so the panel can report what it holds — nothing reads the log back.
+   */
+  readonly requestLog?: RequestLogInfo;
+}
+
+/** What the panel can say about a log on disk without reading it. */
+export interface RequestLogInfo {
+  readonly dir: string;
+  stats(): {
+    readonly files: number;
+    readonly bytes: number;
+    readonly oldestAt: number | null;
+    readonly written: number;
+    readonly dropped: number;
+    readonly writing: boolean;
+  };
+}
+
+/**
+ * The settings the recording path is allowed to see.
+ *
+ * A `RequestScope` carries these and nothing else: the panel's gate and the
+ * retention policy's file handles have no business being reachable from inside
+ * an instrumentation wrapper. A type boundary, not a copy — the same frozen
+ * object is passed.
+ */
+export interface RecordingOptions {
+  readonly enabled: boolean;
+  readonly mode: ReqrayMode;
+  readonly maxSpansPerRequest: number;
+  readonly redact: ResolvedRedactOptions;
+  readonly stack: ResolvedStackOptions;
+  readonly detect: ResolvedDetectOptions;
+  readonly sampling: ResolvedSamplingOptions;
+  readonly logs: boolean;
+  readonly hostMetrics: boolean;
+  /**
+   * Record SQL parameter values.
+   *
+   * Read by an instrumentation rather than by core, which is why it is here
+   * and not among the panel's settings.
+   */
+  readonly collectSqlValues: boolean;
 }
 
 /** Options after resolution: nothing optional is left. */
-export interface ResolvedOptions {
-  readonly enabled: boolean;
-  readonly mode: LoupeMode;
+export interface ResolvedOptions extends RecordingOptions {
   /**
    * The process runs locally: `NODE_ENV` is `development`, `test` or unset.
    * Staging is not included — which is exactly why it requires a gate.
    */
   readonly isLocalDevelopment: boolean;
   readonly bufferSize: number;
-  readonly maxSpansPerRequest: number;
-  readonly redact: ResolvedRedactOptions;
-  readonly stack: ResolvedStackOptions;
-  readonly detect: ResolvedDetectOptions;
-  readonly sampling: ResolvedSamplingOptions;
   /** `null` — panel disabled. */
   readonly panel: ResolvedPanelOptions | null;
   readonly replay: boolean;
+  readonly profile: boolean;
   readonly explain: boolean;
   readonly blame: boolean;
-  readonly logs: boolean;
-  readonly collectSqlValues: boolean;
+  /** `null` — every store keeps to its own limits. */
+  readonly retention: RetentionPolicy | null;
+  /** `null` — nothing is being written to disk as a log. */
+  readonly requestLog: RequestLogInfo | null;
 }
 
 /** @see RedactOptions */
@@ -228,13 +277,8 @@ export interface ResolvedRedactOptions {
   readonly maxBodyLength: number;
 }
 
-/** @see StackCaptureOptions */
-export interface ResolvedStackOptions {
-  readonly limit: number;
-  readonly maxPerFingerprint: number;
-  readonly projectRoot: string;
-  readonly exclude: readonly string[];
-}
+/** @see StackCaptureOptions — the protocol's shape, for the same reason. */
+export type ResolvedStackOptions = StackSettings;
 
 /** Headers that are always masked. */
 export const DEFAULT_REDACTED_HEADERS: readonly string[] = [
@@ -243,12 +287,21 @@ export const DEFAULT_REDACTED_HEADERS: readonly string[] = [
   'set-cookie',
 ];
 
-/** Body fields that are always masked. */
+/**
+ * Body fields and query parameters that are always masked.
+ *
+ * Matched as a part of the name, separators aside: `token` already covers `access_token` and
+ * `refresh_token`, `secret` covers `client_secret`. `signature` is here for
+ * presigned URLs, whose whole authority is one query parameter.
+ */
 export const DEFAULT_REDACTED_BODY_FIELDS: readonly string[] = [
   'password',
   'token',
   'secret',
   'cardNumber',
+  'cvv',
+  'apiKey',
+  'signature',
 ];
 
 /**
@@ -277,9 +330,14 @@ function normalizePatterns(defaults: readonly string[], extra: readonly string[]
  * Layers user thresholds over the defaults.
  *
  * `undefined` in an override is ignored — otherwise a call from untyped JS
- * could wipe a default and leave the detector without a threshold.
+ * could wipe a default and leave the detector without a threshold. A key the
+ * detector does not have is refused with a warning rather than frozen into the
+ * options: from JavaScript, `{ treshold: 10 }` type-checks nowhere, and
+ * silently keeping it means somebody watches a threshold they think they
+ * raised do nothing.
  */
 function resolveDetector<T extends object>(
+  id: string,
   defaults: T,
   override: Partial<T> | false | undefined,
 ): T | null {
@@ -287,25 +345,52 @@ function resolveDetector<T extends object>(
   const merged = { ...defaults } as Record<string, unknown>;
   if (override) {
     for (const [key, value] of Object.entries(override)) {
-      if (value !== undefined) merged[key] = value;
+      if (value === undefined) continue;
+      if (!(key in merged)) {
+        warnOnce(
+          `detect.${id}.${key}`,
+          `reqray: ${id} has no option "${key}" — it was ignored. Known options: ${Object.keys(defaults).join(', ')}.`,
+        );
+        continue;
+      }
+      merged[key] = value;
     }
   }
   return Object.freeze(merged) as T;
 }
 
-function detectMode(explicit: LoupeMode | undefined): LoupeMode {
-  if (explicit) return explicit;
-  return process.env['NODE_ENV'] === 'production' ? 'production' : 'development';
+/** Resolves every detector in the registry, enabled or not. */
+function resolveDetect(overrides: DetectOptions | undefined): ResolvedDetectOptions {
+  const resolved: Record<string, unknown> = {};
+  for (const key of detectorKeys) {
+    resolved[key] = resolveDetector(
+      detectors[key].id,
+      detectors[key].defaultOptions,
+      overrides?.[key],
+    );
+  }
+  return Object.freeze(resolved) as ResolvedDetectOptions;
 }
 
 /**
- * Local development means an explicit `development`/`test` or an unset
- * `NODE_ENV` (the same reading Express uses). `staging` and any custom value
- * are not local: the process may be reachable from outside.
+ * What `NODE_ENV` says. Read once, so the answers cannot disagree.
+ *
+ * "Local" means an explicit `development`/`test` or nothing at all — the same
+ * reading Express uses. `staging` and any custom value are not local: the
+ * process may be reachable from outside.
  */
-function detectLocalDevelopment(): boolean {
+interface Environment {
+  readonly mode: ReqrayMode;
+  readonly isLocalDevelopment: boolean;
+}
+
+function readEnvironment(explicit: ReqrayMode | undefined): Environment {
   const env = process.env['NODE_ENV'];
-  return env === undefined || env === '' || env === 'development' || env === 'test';
+  const production = env === 'production';
+  return {
+    mode: explicit ?? (production ? 'production' : 'development'),
+    isLocalDevelopment: env === undefined || env === '' || env === 'development' || env === 'test',
+  };
 }
 
 /**
@@ -314,17 +399,18 @@ function detectLocalDevelopment(): boolean {
  * Called once at initialization: the hot path reads nothing from
  * `process.env` and normalizes nothing.
  */
-export function resolveOptions(options: LoupeOptions = {}): ResolvedOptions {
-  const mode = detectMode(options.mode);
+export function resolveOptions(options: ReqrayOptions = {}): ResolvedOptions {
+  const { mode, isLocalDevelopment } = readEnvironment(options.mode);
   const redact = options.redact ?? {};
   const stack = options.stack ?? {};
 
   const sampling = options.sampling ?? {};
   const panel = options.panel;
-  const isLocalDevelopment = detectLocalDevelopment();
 
   return Object.freeze({
-    enabled: options.enabled ?? process.env['NODE_ENV'] !== 'production',
+    // From the mode, not from a fourth reading of the environment: an explicit
+    // `mode: 'production'` must switch Reqray off, and it did not.
+    enabled: options.enabled ?? mode !== 'production',
     mode,
     isLocalDevelopment,
     bufferSize: options.bufferSize ?? 500,
@@ -347,19 +433,7 @@ export function resolveOptions(options: LoupeOptions = {}): ResolvedOptions {
       projectRoot: stack.projectRoot ?? process.cwd(),
       exclude: Object.freeze(stack.exclude ? [...stack.exclude] : []),
     }),
-    detect: Object.freeze({
-      nPlusOne: resolveDetector(nPlusOne.defaultOptions, options.detect?.nPlusOne),
-      sequentialHttp: resolveDetector(
-        sequentialHttp.defaultOptions,
-        options.detect?.sequentialHttp,
-      ),
-      duplicateHttp: resolveDetector(duplicateHttp.defaultOptions, options.detect?.duplicateHttp),
-      duplicateCache: resolveDetector(
-        duplicateCache.defaultOptions,
-        options.detect?.duplicateCache,
-      ),
-      slowBudget: resolveDetector(slowBudget.defaultOptions, options.detect?.slowBudget),
-    }),
+    detect: resolveDetect(options.detect),
     sampling: Object.freeze({
       // Locally everything is visible; in production the stream is cut back —
       // otherwise the buffer and the collector drown, and you only ever need
@@ -367,7 +441,7 @@ export function resolveOptions(options: LoupeOptions = {}): ResolvedOptions {
       rate: sampling.rate ?? (mode === 'production' ? 0.01 : 1),
       slowMs: sampling.slowMs ?? (mode === 'production' ? 500 : 0),
       alwaysOnError: sampling.alwaysOnError ?? true,
-      // A request with a finding is exactly what Loupe is installed for — and
+      // A request with a finding is exactly what Reqray is installed for — and
       // locally everything is retained anyway. In production the finding can
       // only become a retention reason if the detectors run on every request,
       // so there the default is off: expensive N+1s reach the sample as slow
@@ -375,15 +449,19 @@ export function resolveOptions(options: LoupeOptions = {}): ResolvedOptions {
       alwaysOnFinding: sampling.alwaysOnFinding ?? mode !== 'production',
     }),
     replay: options.replay ?? isLocalDevelopment,
+    profile: options.profile ?? isLocalDevelopment,
     explain: options.explain ?? isLocalDevelopment,
     blame: options.blame ?? isLocalDevelopment,
     logs: options.logs ?? true,
+    hostMetrics: options.hostMetrics ?? true,
     collectSqlValues: options.collectSqlValues ?? false,
+    retention: options.retention ?? null,
+    requestLog: options.requestLog ?? null,
     panel:
       panel === false
         ? null
         : Object.freeze({
-            path: panel?.path ?? '/_loupe',
+            path: panel?.path ?? '/_reqray',
             gate: panel?.gate ?? null,
           }),
   });

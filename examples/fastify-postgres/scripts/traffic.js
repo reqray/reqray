@@ -4,7 +4,7 @@
  * couple of failures — so the list looks like an application under use, not
  * an empty demo.
  *
- *   pnpm --filter @loupe/example-fastify-postgres traffic
+ *   pnpm --filter @reqray/example-fastify-postgres traffic
  *   BASE=http://127.0.0.1:3000 node scripts/traffic.js
  */
 
@@ -33,6 +33,9 @@ const SCRIPT = [
   () => post('/api/checkout', { orderId: 7, cardNumber: '5500 0000 0000 0004' }),
   () => get('/api/report'),
   () => get('/api/invoice/1'),
+  // Twice: one cold call that fills the cache, one warm call that hits it.
+  () => get('/api/profile/1'),
+  () => get('/api/profile/1'),
   () => get('/api/boom'),
   () => get('/api/boom'),
 ];
@@ -67,7 +70,7 @@ try {
   await fetch(`${BASE}/api/order`);
 } catch {
   console.error(`the app is not responding at ${BASE} — start it first:`);
-  console.error('  pnpm --filter @loupe/example-fastify-postgres start');
+  console.error('  pnpm --filter @reqray/example-fastify-postgres start');
   process.exit(1);
 }
 
@@ -82,7 +85,7 @@ for (const step of SCRIPT) {
   await new Promise((resolve) => setTimeout(resolve, 40 + Math.random() * 160));
 }
 
-console.log(`\ndone — open the panel: ${BASE}/_loupe/`);
+console.log(`\ndone — open the panel: ${BASE}/_reqray/`);
 console.log('what to look at:');
 console.log('  · rows flagged N+1 and SEQ — detectors with a line of code');
 console.log('  · /api/orders/flaky — the compare button in the detail: fast versus slow');

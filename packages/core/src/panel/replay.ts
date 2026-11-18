@@ -11,41 +11,13 @@
  * replay.
  */
 
+import type { ReplayComparison, ReplayInput, ReplayMetrics } from '@reqray/protocol';
 import { runOutsideScope } from '../context.js';
-import { loupeState } from '../state.js';
+import { awaitReplay } from '../replay-waiters.js';
+import { REPLAY_HEADER } from '../reqray.js';
 import type { RecordedRequest } from '../types.js';
 
-/** Header that marks a replay. */
-export const REPLAY_HEADER = 'x-loupe-replay';
-
-/** What the panel asks to replay. */
-export interface ReplayInput {
-  readonly method: string;
-  readonly path: string;
-  readonly headers: Readonly<Record<string, string>>;
-  readonly body?: string | undefined;
-}
-
-/** Metrics of one run — what the comparison block shows. */
-export interface ReplayMetrics {
-  readonly status: number;
-  readonly durationMs: number;
-  readonly sqlCount: number;
-  readonly nPlusOne: boolean;
-  readonly bytes: number | null;
-  readonly etag: string | null;
-}
-
-/** Original versus replay. */
-export interface ReplayComparison {
-  readonly original: ReplayMetrics;
-  readonly replay: ReplayMetrics;
-  /**
-   * The replay's record could not be obtained — metrics were collected from
-   * the response alone. The database query count is unknown in that case.
-   */
-  readonly partial: boolean;
-}
+export type { ReplayComparison, ReplayInput, ReplayMetrics };
 
 function numberOrNull(value: string | undefined): number | null {
   if (value === undefined) return null;
@@ -108,17 +80,15 @@ export async function runReplay(
   recordTimeoutMs = 2_000,
 ): Promise<ReplayComparison> {
   const replayId = nextReplayId();
-  const waiters = loupeState().replayWaiters;
 
-  let deliver: (request: RecordedRequest) => void = () => {};
+  let stopWaiting = (): void => {};
   const recorded = new Promise<RecordedRequest>((resolve) => {
-    deliver = resolve;
+    stopWaiting = awaitReplay(replayId, resolve);
   });
-  waiters.set(replayId, deliver);
 
   const startedAt = performance.now();
   try {
-    // Outside the scope: Loupe's own HTTP call must not become a span of the
+    // Outside the scope: Reqray's own HTTP call must not become a span of the
     // request that opened the panel.
     const response = await runOutsideScope(() =>
       fetch(`${origin}${input.path}`, {
@@ -145,6 +115,6 @@ export async function runReplay(
 
     return { original: metricsOf(original), replay, partial: record === null };
   } finally {
-    waiters.delete(replayId);
+    stopWaiting();
   }
 }

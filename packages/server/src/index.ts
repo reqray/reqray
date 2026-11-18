@@ -1,8 +1,8 @@
 /**
- * `@loupe/server` — the collector.
+ * `@reqray/server` — the collector.
  *
  * A separate process: applications ship batches over HTTP (see
- * `@loupe/transport-http`), the collector stores them and serves the same
+ * `@reqray/transport-http`), the collector stores them and serves the same
  * panel the in-process adapters do. Bare `node:http` on purpose — a collector
  * needs no router or plugins, and every dependency is somebody else's risk.
  *
@@ -19,16 +19,21 @@ import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import {
-  createPanelHandler,
+  isLocalRequest,
   type PanelGate,
   type RecordedRequest,
   resolveOptions,
+  retentionPolicy,
+  type Transport,
   warnOnce,
-} from '@loupe/core';
-import { type MemoryStore, memoryTransport } from '@loupe/transport-memory';
+} from '@reqray/core';
+import { createPanelHandler, type PanelSource } from '@reqray/core/panel';
+import { memoryTransport } from '@reqray/store-memory';
+import { sqliteTransport } from '@reqray/store-sqlite';
+import { fileTransport } from '@reqray/transport-file';
 
-/** Options for {@link createLoupeServer}. */
-export interface LoupeServerOptions {
+/** Options for {@link createReqrayServer}. */
+export interface ReqrayServerOptions {
   /** Port. `0` picks a free one. */
   readonly port?: number;
   /**
@@ -40,24 +45,66 @@ export interface LoupeServerOptions {
   readonly token?: string;
   /** How many requests the collector keeps. */
   readonly bufferSize?: number;
+  /**
+   * Path to a SQLite file. Given one, the collector keeps a history that
+   * outlives it; without one, requests live in memory and die with the
+   * process.
+   */
+  readonly db?: string;
+  /** With `db`: how much disk the stored requests may take, bytes. */
+  readonly maxBytes?: number;
+  /**
+   * Directory for the request log: one line of JSON per request, a file per
+   * day. Without it the collector keeps requests only in its store.
+   */
+  readonly logDir?: string;
+  /**
+   * How many days anything is kept for — the store and the log alike.
+   *
+   * Changeable from the panel, and remembered next to the database so the
+   * change survives a restart.
+   */
+  readonly retentionDays?: number;
 }
 
+/**
+ * What the collector needs from a store, whichever one it is.
+ *
+ * Structural rather than a named union: the memory ring and the SQLite
+ * history have nothing in common but this, and the collector uses nothing
+ * else.
+ */
+export type CollectorStore = PanelSource &
+  Transport & {
+    stats(): { size: number };
+    close?(): Promise<void>;
+  };
+
 /** A running collector. */
-export interface LoupeServer {
+export interface ReqrayServer {
   /** Address the server actually listens on. */
   readonly url: string;
   /** The store — exposed for tests and embedding. */
-  readonly store: MemoryStore;
+  readonly store: CollectorStore;
   close(): Promise<void>;
 }
 
-const COOKIE_NAME = 'loupe_token';
+const COOKIE_NAME = 'reqray_token';
 const MAX_INGEST_BYTES = 32 * 1024 * 1024;
+/**
+ * How many batches may be on their way in at once.
+ *
+ * Each is held whole in memory until it is parsed, so this is the collector's
+ * memory bound — eight of the largest is 256 MB. Past it the answer is 429
+ * with `Retry-After`, which the transport honours: a collector that can only
+ * fall over takes the agents' queues down with it.
+ */
+const MAX_CONCURRENT_INGESTS = 8;
 
 /** Directory with the built dashboard, when it is installed. */
 function dashboardAssets(): string | undefined {
   try {
-    const manifest = createRequire(import.meta.url).resolve('@loupe/dashboard/package.json');
+    const manifest = createRequire(import.meta.url).resolve('@reqray/dashboard/package.json');
     return join(dirname(manifest), 'dist');
   } catch {
     return undefined;
@@ -137,33 +184,72 @@ async function readBody(request: IncomingMessage): Promise<Buffer> {
 }
 
 /** Starts the collector. Resolves once it is listening. */
-export async function createLoupeServer(options: LoupeServerOptions = {}): Promise<LoupeServer> {
+export async function createReqrayServer(options: ReqrayServerOptions = {}): Promise<ReqrayServer> {
   const token = options.token;
   const host = options.host ?? '127.0.0.1';
 
   if (!token && host !== '127.0.0.1' && host !== 'localhost') {
     throw new Error(
-      `loupe-server: listening on ${host} without a token is not allowed — the panel exposes request bodies and SQL. ` +
+      `reqray-server: listening on ${host} without a token is not allowed — the panel exposes request bodies and SQL. ` +
         'Set a token or keep 127.0.0.1.',
     );
   }
 
-  const store = memoryTransport({ capacity: options.bufferSize ?? 2_000 });
+  // One policy for the store and the log, remembered beside whichever of them
+  // is on disk: a collector restarted by an orchestrator must come back with
+  // the setting somebody chose, not the one that was compiled in.
+  const remembered = options.db
+    ? `${options.db}.retention.json`
+    : options.logDir
+      ? join(options.logDir, 'retention.json')
+      : undefined;
+  const retention =
+    options.retentionDays || remembered
+      ? retentionPolicy({
+          ...(options.retentionDays ? { days: options.retentionDays } : {}),
+          ...(options.bufferSize ? { maxRequests: options.bufferSize } : {}),
+          ...(options.maxBytes ? { maxBytes: options.maxBytes } : {}),
+          ...(remembered ? { file: remembered } : {}),
+        })
+      : null;
+
+  // A file means a history; no file means the ring, which is what a
+  // throwaway staging stand wants and what the collector has always been.
+  const store: CollectorStore = options.db
+    ? sqliteTransport({
+        file: options.db,
+        ...(options.bufferSize ? { maxRequests: options.bufferSize } : {}),
+        ...(options.maxBytes ? { maxBytes: options.maxBytes } : {}),
+        ...(retention ? { retention } : {}),
+      })
+    : memoryTransport({ capacity: options.bufferSize ?? 2_000 });
+
+  // The log is beside the store, not instead of it: one is what the panel
+  // reads, the other is what a log shipper picks up and an operator keeps.
+  const log = options.logDir
+    ? fileTransport({ dir: options.logDir, ...(retention ? { retention } : {}) })
+    : null;
   const sessions = new Set<string>();
+  /** Batches being read right now. */
+  let ingesting = 0;
 
   // The panel is authorized either by the cookie session issued at /auth or
   // by the raw token in a header — the latter for curl and healthchecks.
-  const gate: PanelGate = token
+  //
+  // Without a token there is no gate at all, and core then lets in only what
+  // comes from this machine addressed to this machine — `'open'` here used to
+  // let a hostile page re-pointed at 127.0.0.1 read every recorded body.
+  const gate: PanelGate | undefined = token
     ? (context) => {
         const cookie = cookieValue(
           typeof context.headers.cookie === 'string' ? context.headers.cookie : undefined,
           COOKIE_NAME,
         );
         if (cookie && sessions.has(cookie)) return true;
-        const header = context.headers['x-loupe-token'];
+        const header = context.headers['x-reqray-token'];
         return typeof header === 'string' && tokenMatches(token, header);
       }
-    : 'open';
+    : undefined;
 
   const panel = createPanelHandler({
     source: store,
@@ -173,7 +259,9 @@ export async function createLoupeServer(options: LoupeServerOptions = {}): Promi
       enabled: true,
       mode: 'production',
       replay: false,
-      panel: { gate },
+      panel: gate ? { gate } : {},
+      ...(retention ? { retention } : {}),
+      ...(log ? { requestLog: log } : {}),
     }),
     assetsDir: dashboardAssets(),
   });
@@ -188,10 +276,22 @@ export async function createLoupeServer(options: LoupeServerOptions = {}): Promi
   });
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const url = new URL(request.url ?? '/', 'http://loupe.local');
+    const url = new URL(request.url ?? '/', 'http://reqray.local');
 
     if (url.pathname === '/healthz') {
       sendJson(response, 200, { ok: true, size: store.stats().size });
+      return;
+    }
+
+    // No token: the whole collector is for this machine only, the same rule
+    // the panel follows without a gate.
+    if (
+      !token &&
+      !isLocalRequest({ headers: request.headers, ip: request.socket.remoteAddress ?? null })
+    ) {
+      sendJson(response, 403, {
+        error: 'without a token the collector answers only to this machine, at a local address',
+      });
       return;
     }
 
@@ -200,14 +300,30 @@ export async function createLoupeServer(options: LoupeServerOptions = {}): Promi
         sendJson(response, 401, { error: 'token required: authorization: Bearer <token>' });
         return;
       }
+      // A page in a browser can POST text to a local port without asking;
+      // it cannot send JSON without a preflight, which nothing here answers.
+      if (!/^application\/json\b/i.test(request.headers['content-type'] ?? '')) {
+        sendJson(response, 415, { error: 'a batch is sent as application/json' });
+        return;
+      }
+
+      if (ingesting >= MAX_CONCURRENT_INGESTS) {
+        // The body is not read, so the connection cannot be reused.
+        response.writeHead(429, { 'retry-after': '1', connection: 'close' });
+        response.end();
+        return;
+      }
 
       let payload: { requests?: unknown };
+      ingesting++;
       try {
         payload = JSON.parse((await readBody(request)).toString('utf8')) as { requests?: unknown };
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         sendJson(response, 400, { error: `batch not parsed: ${reason}` });
         return;
+      } finally {
+        ingesting--;
       }
 
       const items = Array.isArray(payload.requests) ? payload.requests : [];
@@ -215,6 +331,7 @@ export async function createLoupeServer(options: LoupeServerOptions = {}): Promi
       for (const item of items) {
         if (!isIngestible(item)) continue;
         store.send(item);
+        log?.send(item);
         accepted++;
       }
       if (accepted < items.length) {
@@ -236,7 +353,7 @@ export async function createLoupeServer(options: LoupeServerOptions = {}): Promi
       sessions.add(session);
       response.writeHead(302, {
         'set-cookie': `${COOKIE_NAME}=${session}; HttpOnly; Path=/; SameSite=Strict`,
-        location: '/_loupe/',
+        location: '/_reqray/',
       });
       response.end();
       return;
@@ -245,12 +362,12 @@ export async function createLoupeServer(options: LoupeServerOptions = {}): Promi
     if (panel?.(request, response)) return;
 
     if (url.pathname === '/') {
-      response.writeHead(302, { location: '/_loupe/' });
+      response.writeHead(302, { location: '/_reqray/' });
       response.end();
       return;
     }
 
-    sendJson(response, 404, { error: 'no such path. Panel: /_loupe/, ingest: POST /ingest' });
+    sendJson(response, 404, { error: 'no such path. Panel: /_reqray/, ingest: POST /ingest' });
   }
 
   server.listen(options.port ?? 4300, host);
@@ -260,10 +377,13 @@ export async function createLoupeServer(options: LoupeServerOptions = {}): Promi
   return {
     url: `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${address.port}`,
     store,
-    close: () =>
-      new Promise((resolve) => {
+    close: async () => {
+      await new Promise<void>((resolve) => {
         server.closeAllConnections();
         server.close(() => resolve());
-      }),
+      });
+      // A history holds a file open; the ring has nothing to release.
+      await store.close?.();
+    },
   };
 }

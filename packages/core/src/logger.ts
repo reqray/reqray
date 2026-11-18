@@ -1,33 +1,39 @@
 /**
- * Loupe's own logging.
+ * Reqray's own logging.
  *
  * The project rule: an instrumentation error is caught, logged as a warning
  * **once** and disables that one instrument without touching the rest. Hence
  * {@link warnOnce}.
  */
 
-import { loupeState } from './state.js';
+import { type Box, globalBox, globalSlot } from './state.js';
 
-/** Where Loupe writes its own messages. */
-export interface LoupeLogSink {
+/** Where Reqray writes its own messages. */
+export interface ReqrayLogSink {
   info(message: string): void;
   warn(message: string): void;
 }
 
-const defaultSink: LoupeLogSink = {
+/** Keys of warnings already issued, so `warnOnce` means once per process. */
+const warned = globalSlot('logger.warned', () => new Set<string>());
+
+/** Where Reqray writes its own messages. `null` — the default sink. */
+const sink: () => Box<ReqrayLogSink | null> = globalBox('logger.sink', null);
+
+const defaultSink: ReqrayLogSink = {
   info: (message) => console.info(message),
   warn: (message) => console.warn(message),
 };
 
 /** Replaces the message sink. Needed by tests and apps with their own logger. */
-export function setLogSink(next: LoupeLogSink | null): void {
-  loupeState().sink = next;
+export function setLogSink(next: ReqrayLogSink | null): void {
+  sink().value = next;
 }
 
 /** Writes an informational line, such as the startup report. */
 export function info(message: string): void {
   try {
-    (loupeState().sink ?? defaultSink).info(message);
+    (sink().value ?? defaultSink).info(message);
   } catch {
     // Even a broken logger must not break the application.
   }
@@ -36,7 +42,7 @@ export function info(message: string): void {
 /** Writes a warning, prefixed so it is obvious where it came from. */
 export function warn(message: string): void {
   try {
-    (loupeState().sink ?? defaultSink).warn(`loupe: ${message}`);
+    (sink().value ?? defaultSink).warn(`reqray: ${message}`);
   } catch {
     // Even a broken logger must not break the application.
   }
@@ -49,13 +55,13 @@ export function warn(message: string): void {
  * repeat messages add no information and only do harm.
  */
 export function warnOnce(key: string, message: string): void {
-  const warned = loupeState().warned;
-  if (warned.has(key)) return;
-  warned.add(key);
+  const seen = warned();
+  if (seen.has(key)) return;
+  seen.add(key);
   warn(message);
 }
 
 /** Forgets which warnings have already been issued. Needed by tests. */
 export function resetWarnings(): void {
-  loupeState().warned.clear();
+  warned().clear();
 }

@@ -1,0 +1,72 @@
+{
+  "name": "@reqray/instrumentation-ioredis",
+  "version": "0.0.0",
+  "description": "ioredis driver instrumentation for Reqray.",
+  "license": "MIT",
+  "keywords": [
+    "nodejs",
+    "debugging",
+    "profiling",
+    "n+1",
+    "sql",
+    "observability",
+    "devtools",
+    "fastify",
+    "express",
+    "nestjs"
+  ],
+  "homepage": "https://github.com/reqray/reqray#readme",
+  "bugs": "https://github.com/reqray/reqray/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reqray/reqray.git",
+    "directory": "packages/instrumentation-ioredis"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@reqray/core": "workspace:^"
+  },
+  "peerDependencies": {
+    "ioredis": ">=5 <6"
+  },
+  "peerDependenciesMeta": {
+    "ioredis": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:",
+    "@testcontainers/redis": "^12.1.0",
+    "ioredis": "^5.11.1"
+  }
+}

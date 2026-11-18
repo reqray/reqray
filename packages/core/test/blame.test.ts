@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { blameLine, clearBlameCache, parsePorcelain } from '@loupe/core';
+import { blameLine, parsePorcelain } from '@reqray/core/panel';
+import { clearBlameCache } from '@reqray/core/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 
 afterEach(() => clearBlameCache());
@@ -42,7 +43,7 @@ describe('porcelain parsing', () => {
 
 describe('blaming a real repository', () => {
   function repo(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'loupe-blame-'));
+    const dir = mkdtempSync(join(tmpdir(), 'reqray-blame-'));
     const git = (...args: string[]) =>
       execFileSync('git', args, {
         cwd: dir,
@@ -96,7 +97,7 @@ describe('blaming a real repository', () => {
   });
 
   it('a path outside a repository is not an error either', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'loupe-norepo-'));
+    const dir = mkdtempSync(join(tmpdir(), 'reqray-norepo-'));
     try {
       writeFileSync(join(dir, 'x.js'), 'x\n');
 

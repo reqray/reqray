@@ -1,0 +1,11 @@
+  GET /api/v2/organizations/8f2c14/workspaces/3391/projects/checkout-service/deployments/latest/logs   200   318ms   09:41:02.184   #9101
+
+  TIME                         318ms   318ms your code
+
+  WATERFALL                    1 spans
+                                     0ms 80ms  159ms 239ms 318ms
+                                     ├─────┼─────┼─────┼─────┤
+  fn    logs.tail                    ├───────────────────────┤    317ms
+  —       uninstrumented             █████████████████████████    318ms
+
+  RESPONSE                     200

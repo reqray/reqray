@@ -1,7 +1,7 @@
 /**
  * Standalone mode: the panel with zero lines of code.
  *
- * `node --import @loupe/register app.js` is enough — incoming HTTP is
+ * `node --import @reqray/register app.js` is enough — incoming HTTP is
  * observed through Node's own `diagnostics_channel` (no patching), and the
  * panel comes up on a side port on loopback, away from the application's own
  * routing.
@@ -23,27 +23,21 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
-import {
-  createLoupe,
-  createPanelHandler,
-  enterScope,
-  isAdapterActive,
-  type Loupe,
-  warnOnce,
-} from '@loupe/core';
-import { type MemoryStore, memoryTransport } from '@loupe/transport-memory';
+import { createReqray, enterScope, isAdapterActive, type Reqray, warnOnce } from '@reqray/core';
+import { createPanelHandler } from '@reqray/core/panel';
+import { type MemoryStore, memoryTransport } from '@reqray/store-memory';
 
 const CHANNEL = 'http.server.request.start';
 
 /** Options for {@link enableStandalone}. Mostly for tests. */
 export interface StandaloneOptions {
-  /** Panel port; `0` picks a free one. Default: `LOUPE_PANEL_PORT` or 4310. */
+  /** Panel port; `0` picks a free one. Default: `REQRAY_PANEL_PORT` or 4310. */
   readonly panelPort?: number;
 }
 
 interface StandaloneState {
   subscribed: boolean;
-  runtime: Loupe | null;
+  runtime: Reqray | null;
   store: MemoryStore | null;
   panel: Server | null;
   panelPort: number | null;
@@ -63,7 +57,7 @@ const state: StandaloneState = {
 
 function dashboardAssets(): string | undefined {
   try {
-    const manifest = createRequire(import.meta.url).resolve('@loupe/dashboard/package.json');
+    const manifest = createRequire(import.meta.url).resolve('@reqray/dashboard/package.json');
     return join(dirname(manifest), 'dist');
   } catch {
     return undefined;
@@ -89,11 +83,11 @@ function disable(): void {
  * `null` means standalone must not run here at all — and `disable()` has
  * already been called.
  */
-function ensureRuntime(): Loupe | null {
+function ensureRuntime(): Reqray | null {
   if (state.runtime) return state.runtime;
 
   const store = memoryTransport();
-  const runtime = createLoupe({
+  const runtime = createReqray({
     // Replay needs the application's own origin, which standalone does not
     // reliably know. Off, and said so in the startup line.
     replay: false,
@@ -112,7 +106,7 @@ function ensureRuntime(): Loupe | null {
   return runtime;
 }
 
-function startPanel(runtime: Loupe): void {
+function startPanel(runtime: Reqray): void {
   if (state.panel || !state.store) return;
 
   const handler = createPanelHandler({
@@ -125,12 +119,12 @@ function startPanel(runtime: Loupe): void {
   const server = createServer((request, response) => {
     if (handler(request, response)) return;
     if (request.url === '/' || request.url === '') {
-      response.writeHead(302, { location: '/_loupe/' });
+      response.writeHead(302, { location: '/_reqray/' });
       response.end();
       return;
     }
     response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
-    response.end('{"error":"this is the loupe panel: /_loupe/"}');
+    response.end('{"error":"this is the reqray panel: /_reqray/"}');
   });
   state.panel = server;
 
@@ -150,11 +144,11 @@ function startPanel(runtime: Loupe): void {
   server.listen(state.wantedPort, '127.0.0.1', () => {
     const address = server.address() as AddressInfo;
     state.panelPort = address.port;
-    state.panelUrl = `http://127.0.0.1:${address.port}/_loupe/`;
+    state.panelUrl = `http://127.0.0.1:${address.port}/_reqray/`;
     console.log(
-      `loupe: no adapter found — panel is up at ${state.panelUrl}\n` +
+      `reqray: no adapter found — panel is up at ${state.panelUrl}\n` +
         '       standalone mode: no request bodies, no Replay, paths without route normalization.\n' +
-        '       Full recording comes with an adapter: @loupe/fastify, @loupe/express, @loupe/nestjs.',
+        '       Full recording comes with an adapter: @reqray/fastify, @reqray/express, @reqray/nestjs.',
     );
   });
   // The side server must never keep the application process alive.
@@ -222,15 +216,15 @@ function onRequestStart(message: unknown): void {
 /**
  * Enables the standalone mode.
  *
- * Called automatically when `@loupe/register` is imported. Does nothing until
+ * Called automatically when `@reqray/register` is imported. Does nothing until
  * the first incoming request, so an application with an adapter never even
- * notices it. `LOUPE_STANDALONE=off` switches it off entirely.
+ * notices it. `REQRAY_STANDALONE=off` switches it off entirely.
  */
 export function enableStandalone(options: StandaloneOptions = {}): void {
   if (state.subscribed) return;
-  if (process.env['LOUPE_STANDALONE'] === 'off') return;
+  if (process.env['REQRAY_STANDALONE'] === 'off') return;
 
-  const envPort = Number(process.env['LOUPE_PANEL_PORT']);
+  const envPort = Number(process.env['REQRAY_PANEL_PORT']);
   state.wantedPort = options.panelPort ?? (Number.isInteger(envPort) ? envPort : 4310);
 
   subscribe(CHANNEL, onRequestStart);

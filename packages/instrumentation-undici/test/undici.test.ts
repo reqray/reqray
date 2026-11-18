@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { type HttpSpan, RequestScope, resolveOptions, runInScope } from '@loupe/core';
-import { instrumentUndici } from '@loupe/instrumentation-undici';
+import { type HttpSpan, RequestScope, resolveOptions, runInScope } from '@reqray/core';
+import { instrumentUndici } from '@reqray/instrumentation-undici';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 const options = resolveOptions({ mode: 'development' });
@@ -12,6 +12,12 @@ let base: string;
 
 beforeAll(async () => {
   server = createServer((req, res) => {
+    if (req.url === '/large') {
+      // Big enough that undici does not finish the body on its own.
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('x'.repeat(512 * 1024));
+      return;
+    }
     if (req.url === '/boom') {
       res.writeHead(500, { 'content-type': 'application/json' });
       res.end('{"error":"crashed"}');
@@ -64,6 +70,46 @@ describe('undici instrumentation', () => {
       error: null,
     });
     expect(span?.duration).toBeGreaterThan(0);
+  });
+
+  it('records a call whose body nobody read', async () => {
+    // `const res = await fetch(url); if (!res.ok) throw …` — the trailers
+    // never come, and the span used to wait for them forever.
+    instrumentation.apply({});
+    const scope = makeScope();
+
+    const response = await runInScope(scope, () => fetch(`${base}/large`));
+    await settle();
+
+    expect(httpSpans(scope)).toHaveLength(1);
+    expect(httpSpans(scope)[0]).toMatchObject({ url: `${base}/large`, statusCode: 200 });
+    await response.body?.cancel();
+  });
+
+  it('extends the span to the end of a body that was read', async () => {
+    instrumentation.apply({});
+    const scope = makeScope();
+
+    const response = await runInScope(scope, () => fetch(`${base}/large`));
+    await settle();
+    const atHeaders = httpSpans(scope)[0]?.duration ?? 0;
+    await response.text();
+    await settle();
+
+    // Still one span, and it now covers the read as well.
+    expect(httpSpans(scope)).toHaveLength(1);
+    expect(httpSpans(scope)[0]?.duration).toBeGreaterThan(atHeaders);
+  });
+
+  it('masks a sensitive parameter in the recorded URL', async () => {
+    instrumentation.apply({});
+    const scope = makeScope();
+
+    const response = await runInScope(scope, () => fetch(`${base}/api/charges?token=abc&n=1`));
+    await response.text();
+    await settle();
+
+    expect(httpSpans(scope)[0]?.url).toBe(`${base}/api/charges?token=[redacted]&n=1`);
   });
 
   it('callsite points to the fetch call line', async () => {

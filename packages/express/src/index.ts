@@ -1,5 +1,5 @@
 /**
- * `@loupe/express` — Express adapter.
+ * `@reqray/express` — Express adapter.
  *
  * Wraps the handling of each request in a `RequestScope` so driver
  * instrumentations have somewhere to put their spans, and hands the request to
@@ -12,18 +12,17 @@
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import {
-  createLoupe,
-  createPanelHandler,
-  type Loupe,
-  type LoupeInit,
+  createReqray,
   markAdapterActive,
-  type PanelSource,
   REPLAY_HEADER,
+  type Reqray,
+  type ReqrayInit,
   reportInstrumentation,
   runInScope,
   warnOnce,
-} from '@loupe/core';
-import { memoryTransport } from '@loupe/transport-memory';
+} from '@reqray/core';
+import { createPanelHandler, panelSourceFor } from '@reqray/core/panel';
+import { memoryTransport } from '@reqray/store-memory';
 import type { ErrorRequestHandler, NextFunction, Request, RequestHandler, Response } from 'express';
 
 /** Express version, when it can be resolved from the application. */
@@ -41,12 +40,12 @@ function expressVersion(): string | undefined {
 /**
  * Directory with the built dashboard.
  *
- * Resolved optionally: without `@loupe/dashboard` installed the API still
+ * Resolved optionally: without `@reqray/dashboard` installed the API still
  * works, only the UI route reports that the panel is incomplete.
  */
 function dashboardAssets(): string | undefined {
   try {
-    const manifest = createRequire(import.meta.url).resolve('@loupe/dashboard/package.json');
+    const manifest = createRequire(import.meta.url).resolve('@reqray/dashboard/package.json');
     return join(dirname(manifest), 'dist');
   } catch {
     return undefined;
@@ -54,9 +53,9 @@ function dashboardAssets(): string | undefined {
 }
 
 /** Handlers that have to be installed into the application. */
-export interface LoupeExpress {
+export interface ReqrayExpress {
   /** Runtime: transport, options. Needed by the panel and by tests. */
-  readonly runtime: Loupe;
+  readonly runtime: Reqray;
   /** Installed **before** the routes. */
   readonly middleware: RequestHandler;
   /**
@@ -70,22 +69,6 @@ export interface LoupeExpress {
   readonly errorHandler: ErrorRequestHandler;
 }
 
-/**
- * The panel can only work with a transport that is also a store.
- * An HTTP transport to an external collector has no request list — the panel
- * then runs as a separate process, which is v0.2.
- */
-function asPanelSource(transport: unknown): PanelSource | null {
-  const candidate = transport as Partial<PanelSource> | null;
-  if (!candidate) return null;
-  const complete =
-    typeof candidate.list === 'function' &&
-    typeof candidate.get === 'function' &&
-    typeof candidate.clear === 'function' &&
-    typeof candidate.subscribe === 'function';
-  return complete ? (candidate as PanelSource) : null;
-}
-
 function headerValue(raw: string | string[] | undefined): string | null {
   if (typeof raw === 'string') return raw;
   return Array.isArray(raw) ? (raw[0] ?? null) : null;
@@ -97,25 +80,35 @@ function splitQuery(url: string): [path: string, query: string | null] {
 }
 
 /** Key the exception travels under from the error handler to finalization. */
-const FAILURE = Symbol.for('loupe.express.failure');
+/**
+ * The body among the arguments of `res.json` / `res.send`.
+ *
+ * One argument is the body. Two is Express 4's deprecated `(status, body)`,
+ * where the status comes first.
+ */
+function bodyAmong(args: readonly unknown[]): unknown {
+  return args.length > 1 && typeof args[0] === 'number' ? args[1] : args[0];
+}
+
+const FAILURE = Symbol.for('reqray.express.failure');
 
 interface WithFailure {
   [FAILURE]?: unknown;
 }
 
 /**
- * Creates the Loupe handlers for Express.
+ * Creates the Reqray handlers for Express.
  *
  * @example
  * ```ts
- * const inspector = loupe();
+ * const inspector = reqray();
  * app.use(inspector.middleware);
  * // ...routes...
  * app.use(inspector.errorHandler);
  * ```
  */
-export function loupe(init: LoupeInit = {}): LoupeExpress {
-  // The standalone mode in @loupe/register stands down once an adapter exists.
+export function reqray(init: ReqrayInit = {}): ReqrayExpress {
+  // The standalone mode in @reqray/register stands down once an adapter exists.
   markAdapterActive();
   reportInstrumentation({
     name: 'express',
@@ -124,8 +117,21 @@ export function loupe(init: LoupeInit = {}): LoupeExpress {
     ok: true,
   });
 
-  const runtime = createLoupe({ ...init, transport: init.transport ?? memoryTransport() });
-  const source = asPanelSource(runtime.transport);
+  const runtime = createReqray({ ...init, transport: init.transport ?? memoryTransport() });
+
+  // A disabled Reqray costs nothing per request, and the only way to mean that
+  // literally is to hand back pass-throughs. A check inside the middleware
+  // would still allocate the argument object it is checked from.
+  if (!runtime.options.enabled) {
+    return {
+      runtime,
+      middleware: (_request: Request, _response: Response, next: NextFunction) => next(),
+      errorHandler: (error: unknown, _request: Request, _response: Response, next: NextFunction) =>
+        next(error),
+    };
+  }
+
+  const source = panelSourceFor(runtime.transport, runtime.options);
   const panel = source
     ? createPanelHandler({ source, options: runtime.options, assetsDir: dashboardAssets() })
     : null;
@@ -141,7 +147,7 @@ export function loupe(init: LoupeInit = {}): LoupeExpress {
       path,
       replayId: headerValue(req.headers[REPLAY_HEADER]),
     });
-    // Loupe is disabled — do exactly nothing.
+    // Reqray is disabled — do exactly nothing.
     if (!scope) {
       next();
       return;
@@ -151,14 +157,17 @@ export function loupe(init: LoupeInit = {}): LoupeExpress {
     const originalJson = res.json;
     const originalSend = res.send;
 
-    res.json = function loupeJson(this: Response, body?: unknown) {
-      responseBody = body;
-      return originalJson.call(this, body);
+    // Every argument goes through as it came. Express 4 still takes a status
+    // beside the body — `res.json(500, { error })` — and a wrapper that
+    // forwards only the first turns that into a 200 whose body is `500`.
+    res.json = function reqrayJson(this: Response, ...args: unknown[]) {
+      responseBody = bodyAmong(args);
+      return (originalJson as (...inner: unknown[]) => Response).apply(this, args);
     } as Response['json'];
 
-    res.send = function loupeSend(this: Response, body?: unknown) {
-      if (responseBody === undefined) responseBody = body;
-      return originalSend.call(this, body);
+    res.send = function reqraySend(this: Response, ...args: unknown[]) {
+      if (responseBody === undefined) responseBody = bodyAmong(args);
+      return (originalSend as (...inner: unknown[]) => Response).apply(this, args);
     } as Response['send'];
 
     // One span for the whole handling: SQL, cache and outgoing HTTP nest into
@@ -207,7 +216,7 @@ export function loupe(init: LoupeInit = {}): LoupeExpress {
 }
 
 /**
- * Stamps the exception onto the response the way {@link LoupeExpress.errorHandler}
+ * Stamps the exception onto the response the way {@link ReqrayExpress.errorHandler}
  * does.
  *
  * For frameworks on top of Express (NestJS) that intercept exceptions

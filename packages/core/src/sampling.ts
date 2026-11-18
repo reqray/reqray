@@ -3,7 +3,7 @@
  *
  * The decision is made **after** the request finishes (tail-based): only then
  * is it known whether it was slow, whether it failed and whether anything was
- * found in it. Exactly the requests Loupe is installed for are always
+ * found in it. Exactly the requests Reqray is installed for are always
  * retained, while the stream of ordinary ones is cut down by the base rate.
  */
 

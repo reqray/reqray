@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { RequestDetail, Span } from '../src/api';
-import { buildFlamegraph, flameLevels, LABEL_MIN_WIDTH } from '../src/flamegraph';
+import type { RequestDetail, Span } from '../src/api/index';
+import {
+  buildFlamegraph,
+  flameLevels,
+  LABEL_MIN_WIDTH,
+} from '../src/features/detail/lib/flame-blocks';
 
 let id = 0;
 

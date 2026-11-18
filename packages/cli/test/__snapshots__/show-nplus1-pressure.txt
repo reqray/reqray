@@ -1,0 +1,46 @@
+  GET /api/orders   200   275ms   09:41:02.184   #8974   from orders.spec.ts:42 › lists orders
+
+  TIME                         275ms   52ms sql   214ms external   1.2ms cache   8.2ms your code
+                               slower than 95% of 47 calls to /api/orders
+                               loop over 37ms behind → p95 1.8× slower on 24% of 100 calls
+
+  WATERFALL                    61 spans, 2 of them duplicated
+                                     0ms      69ms       138ms      206ms    275ms
+                                     ├──────────┼──────────┼──────────┼──────────┤
+  mw    cors                         ▏                                                0.4ms
+  mw    helmet                       ▏                                                0.3ms
+  mw    auth.verifyJwt               ██                                               5.4ms
+  mw    body-parser.json             ▏                                                0.7ms
+  fn    orders.list                   ├──────────────────────────────────────────┤    269ms
+  cache   user:8812:permissions       ▏                                               0.3ms
+  cache   feature-flags:checkout-v3   ▏                                               0.2ms
+  sql     SELECT users WHERE id=$1    ▏                                               2.1ms
+  sql     SELECT orders ORDER BY cr…  ██                                              8.6ms
+  sql     47× SELECT line_items WHE…   ███████                                       41.2ms N+1
+  http    api.stripe.com /v1/charges          ███████████████████                     118ms
+  cache   feature-flags:checkout-v3                              ▏                    0.2ms DUP
+  http    api.stripe.com /v1/charges                             ████████████████    96.0ms DUP
+  cache   orders:8812:page1                                                      ▏    0.5ms
+  mw    serialize + gzip                                                         ▏    1.4ms
+
+  FINDINGS                     3
+
+  ! N+1   47 identical queries in a loop                                       41.2ms   15% of total
+        SELECT * FROM line_items WHERE order_id = $1
+        services/orders.js:118
+        fix   eager-load line_items with a single IN (…) query
+
+  ! DUP   2 identical outbound calls                                           96.0ms   35% of total
+        GET https://api.stripe.com/v1/charges?customer=cus_QxT1
+        clients/stripe.js:40
+        fix   memoize within the request scope
+
+    dup   2 identical cache reads for one key                                                  0.4ms
+        cache.get feature-flags:checkout-v3   middleware/flags.js:14
+
+  RESPONSE                     200   application/json   4.1 KB   166 rows   etag W/"105b-7Yl1dK+8"
+        server-timing   db;dur=52.1   cache;dur=0.8   ext;dur=214.0
+        body   {"data":[{"id":8812,"reference":"ORD-2026-8812","total_cents":12900,"currency":"EUR…
+
+  reqray show 8974 --body        the whole response body
+  reqray show 8974 --sql         all 49 queries with their callsites

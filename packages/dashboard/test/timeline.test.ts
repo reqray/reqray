@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { RequestRow } from '../src/api';
+import type { RequestRow } from '../src/api/index';
 import {
   bucketInWindow,
   buildTimeline,
   CLICK_FRACTION,
   inWindow,
+  newestRun,
+  type Timeline,
   windowExtent,
   windowFromFractions,
-} from '../src/timeline';
+} from '../src/shared/list/timeline';
 
 let seq = 0;
 
@@ -18,6 +20,8 @@ function row(startedAt: number, extra: Partial<RequestRow> = {}): RequestRow {
     method: 'GET',
     path: '/api/x',
     query: null,
+    route: '/api/x',
+    flag: null,
     status: 200,
     durationMs: 10,
     startedAt,
@@ -25,6 +29,11 @@ function row(startedAt: number, extra: Partial<RequestRow> = {}): RequestRow {
     nPlusOne: false,
     findingCount: 0,
     hasError: false,
+    httpCount: 0,
+    cpuMs: null,
+    cpuShare: null,
+    pinned: false,
+    test: null,
     ...extra,
   };
 }
@@ -105,5 +114,63 @@ describe('the drag window', () => {
     expect(bucketInWindow(0, full, win)).toBe(true);
     expect(bucketInWindow(3, full, win)).toBe(false);
     expect(bucketInWindow(3, full, null)).toBe(true);
+  });
+});
+
+describe('the newest run of traffic', () => {
+  /** A strip of `count` columns with traffic only where told. */
+  const strip = (count: number, busy: readonly number[]): Timeline => ({
+    from: 0,
+    // Wide enough columns that the strip spans hours: below ten minutes the
+    // whole strip is one sitting and there is nothing to crop.
+    to: count * 60_000,
+    buckets: Array.from({ length: count }, (_, index) => ({
+      err: 0,
+      slow: 0,
+      rest: busy.includes(index) ? 5 : 0,
+      total: busy.includes(index) ? 5 : 0,
+    })),
+  });
+
+  it('finds the run at the end when the rest of the strip is silence', () => {
+    // A store that keeps a week and an application that ran for an hour: one
+    // session days ago, one now, and sixty columns of nothing between them.
+    const run = newestRun(strip(64, [0, 62, 63]));
+
+    expect(run).not.toBeNull();
+    expect(run?.[0]).toBe(62 * 60_000);
+    expect(run?.[1]).toBe(64 * 60_000);
+  });
+
+  it('bridges a quiet stretch inside one session', () => {
+    // A tenth of the strip is a quiet minute, not the gap between two days.
+    const run = newestRun(strip(64, [0, 56, 57, 62, 63]));
+    expect(run?.[0]).toBe(56 * 60_000);
+  });
+
+  it('says nothing when the traffic already fills the strip', () => {
+    // Zooming here would crop the history rather than reveal it.
+    const busy = Array.from({ length: 40 }, (_, index) => index + 24);
+    expect(newestRun(strip(64, busy))).toBeNull();
+  });
+
+  it('says nothing about an empty strip', () => {
+    expect(newestRun(strip(64, []))).toBeNull();
+  });
+
+  it('leaves a short session alone, however it is clustered', () => {
+    // Two minutes of traffic with a pause in the middle is one sitting: a
+    // coffee, a restart, a test run. Cropping it to the newest half would
+    // hide what happened before the pause.
+    const short: Timeline = {
+      from: 0,
+      to: 120_000,
+      buckets: Array.from({ length: 64 }, (_, index) => {
+        const busy = index < 4 || index > 58;
+        return { err: 0, slow: 0, rest: busy ? 5 : 0, total: busy ? 5 : 0 };
+      }),
+    };
+
+    expect(newestRun(short)).toBeNull();
   });
 });

@@ -7,45 +7,12 @@
  */
 
 import { createHash } from 'node:crypto';
+import type { ExceptionFrame, ExceptionGroup } from '@reqray/protocol';
 import { isProjectFrame, parseStackFrame } from '../callsite.js';
 import type { ResolvedStackOptions } from '../config.js';
 import type { RecordedRequest, SpanError } from '../types.js';
 
-/** A stack frame as the panel shows it. */
-export interface ExceptionFrame {
-  /** The original stack line. */
-  readonly raw: string;
-  readonly file: string | null;
-  readonly line: number | null;
-  /** The frame belongs to project code — the panel highlights those. */
-  readonly project: boolean;
-}
-
-/** A group of identical exceptions. */
-export interface ExceptionGroup {
-  /** Stable group identifier: hash of the normalised stack. */
-  readonly id: string;
-  /** Exception type: `TypeError`, `ZodError`. */
-  readonly type: string;
-  readonly message: string;
-  /** First project frame: `services/pricing.js:61`. */
-  readonly origin: string | null;
-  /** Where it happened: `POST /api/orders`. */
-  readonly where: string | null;
-  readonly count: number;
-  /** Time of the last occurrence, epoch ms. */
-  readonly lastSeenAt: number;
-  /** Ids of the requests it happened in — newest first. */
-  readonly requestIds: readonly string[];
-  readonly frames: readonly ExceptionFrame[];
-  /** Histogram of occurrences over time, for the sparkline. */
-  readonly buckets: readonly number[];
-  /**
-   * A test that reproduced this exception, when one of the requests carried a
-   * test name. The most recent one wins — it is the one to run again.
-   */
-  readonly test: string | null;
-}
+export type { ExceptionFrame, ExceptionGroup };
 
 /** Buckets in the sparkline — as many as there are bars in the mockup. */
 const BUCKET_COUNT = 12;

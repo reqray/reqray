@@ -1,8 +1,27 @@
 {
-  "name": "@loupe/instrumentation-undici",
+  "name": "@reqray/instrumentation-undici",
   "version": "0.0.0",
-  "description": "Outgoing HTTP instrumentation (undici / built-in fetch) for Loupe.",
+  "description": "Outgoing HTTP instrumentation (undici / built-in fetch) for Reqray.",
   "license": "MIT",
+  "keywords": [
+    "nodejs",
+    "debugging",
+    "profiling",
+    "n+1",
+    "sql",
+    "observability",
+    "devtools",
+    "fastify",
+    "express",
+    "nestjs"
+  ],
+  "homepage": "https://github.com/reqray/reqray#readme",
+  "bugs": "https://github.com/reqray/reqray/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reqray/reqray.git",
+    "directory": "packages/instrumentation-undici"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -33,7 +52,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@loupe/core": "workspace:^"
+    "@reqray/core": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "catalog:",

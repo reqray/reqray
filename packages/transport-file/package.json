@@ -1,0 +1,63 @@
+{
+  "name": "@reqray/transport-file",
+  "version": "0.0.0",
+  "description": "Reqray request log: every recorded request as a line of JSON, rotated by day and swept by the retention policy.",
+  "license": "MIT",
+  "keywords": [
+    "nodejs",
+    "debugging",
+    "profiling",
+    "n+1",
+    "sql",
+    "observability",
+    "devtools",
+    "fastify",
+    "express",
+    "nestjs"
+  ],
+  "homepage": "https://github.com/reqray/reqray#readme",
+  "bugs": "https://github.com/reqray/reqray/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reqray/reqray.git",
+    "directory": "packages/transport-file"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@reqray/core": "workspace:^",
+    "@reqray/protocol": "workspace:^"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

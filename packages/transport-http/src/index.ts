@@ -1,8 +1,8 @@
 /**
- * `@loupe/transport-http` — shipping batches to an external collector.
+ * `@reqray/transport-http` — shipping batches to an external collector.
  *
  * The agent inside the application only collects and sends; storage and the
- * panel live in `@loupe/server`. Two promises this transport keeps no matter
+ * panel live in `@reqray/server`. Two promises this transport keeps no matter
  * what the collector does:
  *
  * - the application is never blocked: `send()` is a queue push, everything
@@ -11,7 +11,8 @@
  *   records are dropped — fresh data is worth more than stale data.
  */
 
-import { type RecordedRequest, type Transport, warnOnce } from '@loupe/core';
+import { type Transport, warnOnce } from '@reqray/core';
+import type { RecordedRequest } from '@reqray/protocol';
 
 /** Options for {@link httpTransport}. */
 export interface HttpTransportOptions {
@@ -25,6 +26,12 @@ export interface HttpTransportOptions {
   readonly flushIntervalMs?: number;
   /** Queue cap; beyond it the oldest records are dropped. */
   readonly maxQueue?: number;
+  /**
+   * Cap on the serialized size of the queue; beyond it the oldest records
+   * are dropped. A count alone bounds nothing: a thousand records with
+   * bodies is hundreds of megabytes held for a collector that is down.
+   */
+  readonly maxQueueBytes?: number;
   /** Timeout of one POST to the collector, ms. */
   readonly timeoutMs?: number;
   /** First retry delay after a failure, ms. Doubles up to 30 s, with jitter. */
@@ -44,12 +51,15 @@ export interface IngestPayload {
 
 const MAX_RETRY_DELAY_MS = 30_000;
 
-/** Creates the HTTP transport. */
 export function httpTransport(options: HttpTransportOptions): HttpTransport {
   const url = new URL('/ingest', options.url).toString();
   const batchSize = options.batchSize ?? 50;
   const flushIntervalMs = options.flushIntervalMs ?? 2_000;
   const maxQueue = options.maxQueue ?? 1_000;
+  // shortcut: counted in string length, not bytes — non-ASCII bodies are up
+  // to 3x larger on the wire. 8 MB keeps the worst case under the
+  // collector's 32 MB batch limit; count bytes if a 400 for size ever shows.
+  const maxQueueBytes = options.maxQueueBytes ?? 8 * 1024 * 1024;
   const timeoutMs = options.timeoutMs ?? 10_000;
   const baseRetryDelayMs = options.retryDelayMs ?? 1_000;
 
@@ -58,8 +68,13 @@ export function httpTransport(options: HttpTransportOptions): HttpTransport {
   // shows up as event-loop lag spikes. Per-record cost is paid in `send()`,
   // which already runs outside request handling.
   const queue: string[] = [];
+  let queuedSize = 0;
+  /** What the collector asked for in `Retry-After` on its last refusal, ms. */
+  let askedToWaitMs = 0;
   let timer: NodeJS.Timeout | null = null;
   let inFlight = false;
+  /** Settles when the drain in progress, if any, has finished its POST. */
+  let draining: Promise<void> = Promise.resolve();
   let retryDelayMs = 0;
   /** `performance.now()` before which sending is paused after a failure. */
   let pausedUntil = 0;
@@ -78,6 +93,10 @@ export function httpTransport(options: HttpTransportOptions): HttpTransport {
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!response.ok) {
+        // A saturated collector says how long to stay away; an agent that
+        // came back sooner would be part of what saturates it.
+        const seconds = Number(response.headers.get('retry-after'));
+        askedToWaitMs = seconds > 0 ? seconds * 1000 : 0;
         warnOnce(
           'transport.http.status',
           `collector answered ${response.status} — records will be retried and displaced by newer ones`,
@@ -95,13 +114,24 @@ export function httpTransport(options: HttpTransportOptions): HttpTransport {
     }
   }
 
-  /** Trims the queue to the cap, dropping the oldest records. */
+  /** Takes the next batch off the front of the queue. */
+  function take(): string[] {
+    const batch = queue.splice(0, batchSize);
+    for (const record of batch) queuedSize -= record.length;
+    return batch;
+  }
+
+  /** Trims the queue to its caps, dropping the oldest records. */
   function trim(): void {
-    if (queue.length <= maxQueue) return;
-    queue.splice(0, queue.length - maxQueue);
+    let dropped = false;
+    while (queue.length > maxQueue || (queuedSize > maxQueueBytes && queue.length > 0)) {
+      queuedSize -= queue.shift()?.length ?? 0;
+      dropped = true;
+    }
+    if (!dropped) return;
     warnOnce(
       'transport.http.overflow',
-      `transport queue overflowed, oldest records are being dropped (limit ${maxQueue})`,
+      `transport queue overflowed, oldest records are being dropped (limits: ${maxQueue} records, ${maxQueueBytes} bytes)`,
     );
   }
 
@@ -129,20 +159,26 @@ export function httpTransport(options: HttpTransportOptions): HttpTransport {
     }
 
     inFlight = true;
+    let finished = (): void => {};
+    draining = new Promise((resolve) => {
+      finished = resolve;
+    });
     try {
       while (queue.length > 0) {
-        const batch = queue.splice(0, batchSize);
+        const batch = take();
         const delivered = await post(batch);
 
         if (!delivered) {
           queue.unshift(...batch);
+          for (const record of batch) queuedSize += record.length;
           trim();
           retryDelayMs = Math.min(
             retryDelayMs > 0 ? retryDelayMs * 2 : baseRetryDelayMs,
             MAX_RETRY_DELAY_MS,
           );
           // Jitter keeps a fleet of agents from retrying in lockstep.
-          pausedUntil = performance.now() + retryDelayMs * (0.5 + Math.random() * 0.5);
+          pausedUntil =
+            performance.now() + Math.max(retryDelayMs * (0.5 + Math.random() * 0.5), askedToWaitMs);
           break;
         }
         retryDelayMs = 0;
@@ -153,6 +189,7 @@ export function httpTransport(options: HttpTransportOptions): HttpTransport {
       }
     } finally {
       inFlight = false;
+      finished();
     }
     armTimer();
   }
@@ -163,7 +200,9 @@ export function httpTransport(options: HttpTransportOptions): HttpTransport {
     send(request) {
       if (closed) return;
       try {
-        queue.push(JSON.stringify(request));
+        const record = JSON.stringify(request);
+        queue.push(record);
+        queuedSize += record.length;
       } catch {
         // An unserializable record is dropped; the transport must never throw.
         return;
@@ -184,13 +223,16 @@ export function httpTransport(options: HttpTransportOptions): HttpTransport {
      * cannot be delivered right now is dropped.
      */
     async flush() {
+      // A POST already on the wire is part of what is being flushed: returning
+      // past it let `close()` finish with that batch undelivered and the tail
+      // behind it never sent. Looped, because a `send` may start another.
+      while (inFlight) await draining;
       if (timer) {
         clearTimeout(timer);
         timer = null;
       }
-      while (queue.length > 0 && !inFlight) {
-        const batch = queue.splice(0, batchSize);
-        if (!(await post(batch))) return;
+      while (queue.length > 0) {
+        if (!(await post(take()))) return;
       }
     },
 

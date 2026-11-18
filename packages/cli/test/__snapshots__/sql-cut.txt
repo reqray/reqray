@@ -1,0 +1,10 @@
+  q1   8.6ms   25 rows     services/orders.js:96
+
+       SELECT o.id, o.reference, o.status, o.total_cents, o.currency, o.created_at, u.email,
+       u.display_name, a.line1, a.city, a.country_code, COUNT(li.id) AS item_count FROM orders o
+       INNER JOIN users u ON u.id = o.user_id LEFT JOIN addresses a ON a.id = o.address_id LEFT
+       … 3 more lines                                              reqray show 9102 --sql q1 --full
+
+! q2   41.2ms  47 calls    services/orders.js:118                                               N+1
+
+       SELECT * FROM line_items WHERE order_id = $1

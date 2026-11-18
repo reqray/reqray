@@ -1,4 +1,10 @@
-import { isSensitiveField, redactHeaders, redactValue, resolveOptions } from '@loupe/core';
+import {
+  isSensitiveField,
+  redactHeaders,
+  redactQuery,
+  redactValue,
+  resolveOptions,
+} from '@reqray/core';
 import { describe, expect, it } from 'vitest';
 
 const { redact } = resolveOptions();
@@ -164,5 +170,34 @@ describe('isSensitiveField', () => {
     expect(isSensitiveField('Card_Number', redact.body)).toBe(true);
     expect(isSensitiveField('card-number', redact.body)).toBe(true);
     expect(isSensitiveField('cardholder', redact.body)).toBe(false);
+  });
+});
+
+describe('redactQuery', () => {
+  it('masks by parameter name, in a bare query and in a whole URL', () => {
+    expect(redactQuery('a=1&token=abc', redact)).toBe('a=1&token=[redacted]');
+    expect(redactQuery('https://api.example.com/v1/x?access_token=abc&n=2#top', redact)).toBe(
+      'https://api.example.com/v1/x?access_token=[redacted]&n=2#top',
+    );
+  });
+
+  it('masks an API key and a presigned signature without being told to', () => {
+    expect(redactQuery('api_key=abc&page=2', redact)).toBe('api_key=[redacted]&page=2');
+    expect(
+      redactQuery('https://bucket.s3.amazonaws.com/report.pdf?X-Amz-Signature=abc', redact),
+    ).toBe('https://bucket.s3.amazonaws.com/report.pdf?X-Amz-Signature=[redacted]');
+    expect(redactValue({ card: { cvv: '123', apiKey: 'k' } }, redact)).toEqual({
+      card: { cvv: mask, apiKey: mask },
+    });
+  });
+
+  it('leaves alone what holds nothing to mask', () => {
+    // Including a path that merely mentions a pattern: masking is by
+    // parameter name, and a path segment is not one.
+    expect(redactQuery('page=2&sort=asc', redact)).toBe('page=2&sort=asc');
+    expect(redactQuery('https://auth.example.com/oauth/token', redact)).toBe(
+      'https://auth.example.com/oauth/token',
+    );
+    expect(redactQuery('q=tokenizer', redact)).toBe('q=tokenizer');
   });
 });

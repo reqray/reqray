@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { ExplainResult, RequestDetail, Span } from '../src/api';
-import { buildBriefing } from '../src/briefing';
+import type { ExplainResult, RequestDetail, Span } from '../src/api/index';
+import { buildBriefing } from '../src/features/detail/lib/briefing';
 
 let spanId = 0;
 
@@ -31,6 +31,8 @@ function detailWith(overrides: Partial<RequestDetail>): RequestDetail {
     method: 'GET',
     path: '/api/orders',
     query: null,
+    route: '/api/orders',
+    flag: null,
     status: 200,
     durationMs: 48,
     startedAt: Date.now(),
@@ -38,6 +40,11 @@ function detailWith(overrides: Partial<RequestDetail>): RequestDetail {
     nPlusOne: false,
     findingCount: 0,
     hasError: false,
+    httpCount: 0,
+    cpuMs: null,
+    cpuShare: null,
+    pinned: false,
+    test: null,
     spans: [],
     findings: [],
     requestHeaders: {},
@@ -48,6 +55,10 @@ function detailWith(overrides: Partial<RequestDetail>): RequestDetail {
     error: null,
     droppedSpans: 0,
     droppedLogs: 0,
+    timing: { sqlMs: 0, externalMs: 0, cacheMs: 0, selfMs: 48, parallel: false },
+    weight: { bytesIn: null, bytesOut: null, rows: 0, biggestRows: 0 },
+    cost: null,
+    host: null,
     ...overrides,
   };
 }
@@ -118,7 +129,7 @@ describe('assistant briefing', () => {
 
   it('bodies are truncated and the total briefing length is capped', () => {
     const huge = detailWith({
-      responseBody: { text: 'x'.repeat(5_000), truncated: false },
+      responseBody: { text: 'x'.repeat(5_000), truncated: false, bytes: 5_000 },
       spans: Array.from({ length: 500 }, (_, i) => db(`SELECT col_${i} FROM t_${i}`, 1)),
       logs: Array.from({ length: 100 }, (_, i) => ({
         at: i,

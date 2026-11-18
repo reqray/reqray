@@ -1,8 +1,27 @@
 {
-  "name": "@loupe/dashboard",
+  "name": "@reqray/dashboard",
   "version": "0.0.0",
-  "description": "Loupe dashboard: React SPA, built as static files and served by the adapter.",
+  "description": "Reqray dashboard: React SPA, built as static files and served by the adapter.",
   "license": "MIT",
+  "keywords": [
+    "nodejs",
+    "debugging",
+    "profiling",
+    "n+1",
+    "sql",
+    "observability",
+    "devtools",
+    "fastify",
+    "express",
+    "nestjs"
+  ],
+  "homepage": "https://github.com/reqray/reqray#readme",
+  "bugs": "https://github.com/reqray/reqray/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reqray/reqray.git",
+    "directory": "packages/dashboard"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -24,11 +43,14 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@reqray/core": "workspace:^",
+    "@reqray/protocol": "workspace:^",
+    "@reqray/waterfall": "workspace:^",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
     "typescript": "catalog:",
     "vite": "^8.2.1"
   }

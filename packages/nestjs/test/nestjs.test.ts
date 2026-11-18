@@ -5,12 +5,23 @@
 
 import 'reflect-metadata';
 
-import { current, fingerprintSql, type RecordedRequest, record } from '@loupe/core';
-import { LoupeModule } from '@loupe/nestjs';
-import { type MemoryStore, memoryTransport } from '@loupe/transport-memory';
-import { Body, Controller, Get, type INestApplication, Post } from '@nestjs/common';
+import {
+  type ArgumentsHost,
+  Body,
+  Catch,
+  Controller,
+  type ExceptionFilter,
+  Get,
+  type INestApplication,
+  Post,
+  type Provider,
+} from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
+import { current, fingerprintSql, type RecordedRequest, record } from '@reqray/core';
+import { ReqrayModule } from '@reqray/nestjs';
+import { type MemoryStore, memoryTransport } from '@reqray/store-memory';
 import { afterEach, describe, expect, it } from 'vitest';
 
 function fakeQuery(sql: string, duration: number, startTime: number): void {
@@ -54,6 +65,19 @@ class OrdersController {
   }
 }
 
+/** The application's own catch-all: what it tells a client when it breaks. */
+@Catch()
+class AppErrorFilter implements ExceptionFilter {
+  catch(_exception: unknown, host: ArgumentsHost): void {
+    // `status().send()` is the one spelling both platforms' replies share.
+    host
+      .switchToHttp()
+      .getResponse<{ status(code: number): { send(body: unknown): void } }>()
+      .status(503)
+      .send({ handledBy: 'the application' });
+  }
+}
+
 interface Harness {
   readonly app: INestApplication;
   readonly store: MemoryStore;
@@ -62,11 +86,15 @@ interface Harness {
 
 const apps: INestApplication[] = [];
 
-async function harness(platform: 'express' | 'fastify'): Promise<Harness> {
+async function harness(
+  platform: 'express' | 'fastify',
+  providers: Provider[] = [],
+): Promise<Harness> {
   const store = memoryTransport();
   const moduleRef = await Test.createTestingModule({
-    imports: [LoupeModule.forRoot({ mode: 'development', transport: store })],
+    imports: [ReqrayModule.forRoot({ mode: 'development', transport: store })],
     controllers: [OrdersController],
+    providers,
   }).compile();
 
   const app =
@@ -140,6 +168,22 @@ describe.each(['express', 'fastify'] as const)('platform %s', (platform) => {
     expect(recorded.error?.message).toBe('handler crashed');
   });
 
+  it('leaves error handling to the application’s own filter', async () => {
+    // A catch-all filter from an imported module is picked over the
+    // application's. Reqray used to register one, and adding the module
+    // changed what clients were told on every error.
+    const { store, base } = await harness(platform, [
+      { provide: APP_FILTER, useClass: AppErrorFilter },
+    ]);
+
+    const response = await fetch(`${base}/boom`);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ handledBy: 'the application' });
+
+    // And the exception still reaches the record.
+    expect((await waitForRecord(store)).error?.message).toBe('handler crashed');
+  });
+
   it("a 404 from Nest's router is a regular record without an exception", async () => {
     const { store, base } = await harness(platform);
 
@@ -168,7 +212,7 @@ describe.each(['express', 'fastify'] as const)('platform %s', (platform) => {
     await fetch(`${base}/orders`);
     await waitForRecord(store);
 
-    const panel = await fetch(`${base}/_loupe/api/requests`);
+    const panel = await fetch(`${base}/_reqray/api/requests`);
     expect(panel.status).toBe(200);
     const payload = (await panel.json()) as { requests: Array<{ path: string }> };
     expect(payload.requests).toHaveLength(1);

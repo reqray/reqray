@@ -9,7 +9,7 @@
 /**
  * Deliberate N+1: one query for the orders, then one per order.
  *
- * The loop below is the line Loupe reports as the callsite.
+ * The loop below is the line Reqray reports as the callsite.
  */
 export async function listOrdersWithNPlusOne(pool, userId) {
   const { rows: orders } = await pool.query(

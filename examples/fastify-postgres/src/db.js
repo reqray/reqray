@@ -3,7 +3,7 @@
  *
  * Defaults to PGlite — Postgres built to WebAssembly — behind a socket server,
  * so `pnpm start` needs no Docker and no local Postgres. It speaks the same
- * wire protocol, so the app connects with the ordinary `pg` driver and Loupe
+ * wire protocol, so the app connects with the ordinary `pg` driver and Reqray
  * instruments it exactly as it would a real server.
  *
  * Set `DATABASE_URL` to point at a real Postgres instead.

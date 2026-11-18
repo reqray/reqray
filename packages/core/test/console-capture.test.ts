@@ -9,7 +9,7 @@ import {
   resolveOptions,
   runInScope,
   uninstrumentConsole,
-} from '@loupe/core';
+} from '@reqray/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 function makeScope(logs = true) {

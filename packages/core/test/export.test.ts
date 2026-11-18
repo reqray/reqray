@@ -1,8 +1,9 @@
-import { type RecordedRequest, toCurlScript, toHar } from '@loupe/core';
+import { type RecordedRequest, timingOf, weightOf } from '@reqray/core';
+import { toCurlScript, toHar } from '@reqray/core/panel';
 import { describe, expect, it } from 'vitest';
 
 function request(over: Partial<RecordedRequest> = {}): RecordedRequest {
-  return {
+  const base = {
     id: 'r1',
     method: 'GET',
     path: '/api/orders',
@@ -15,13 +16,20 @@ function request(over: Partial<RecordedRequest> = {}): RecordedRequest {
     requestHeaders: { host: 'localhost:3000', authorization: '[redacted]' },
     responseHeaders: { 'content-type': 'application/json' },
     requestBody: null,
-    responseBody: { text: '{"ok":true}', truncated: false },
+    responseBody: { text: '{"ok":true}', truncated: false, bytes: 11 },
     logs: [],
     error: null,
     droppedSpans: 0,
     droppedLogs: 0,
     test: null,
     ...over,
+  };
+  return {
+    ...base,
+    timing: timingOf(base.spans, base.durationMs),
+    host: base.host ?? null,
+    weight: weightOf(base),
+    cost: null,
   };
 }
 
@@ -47,7 +55,7 @@ describe('HAR export', () => {
     });
   });
 
-  it('carries what Loupe knows and HAR does not, under an extension key', () => {
+  it('carries what Reqray knows and HAR does not, under an extension key', () => {
     const [entry] = (
       toHar([
         request({
@@ -55,10 +63,10 @@ describe('HAR export', () => {
           findings: [{ detector: 'n_plus_one' }] as never,
           test: 'orders.spec.ts:42',
         }),
-      ]) as { log: { entries: Array<{ _loupe: unknown }> } }
+      ]) as { log: { entries: Array<{ _reqray: unknown }> } }
     ).log.entries;
 
-    expect(entry?._loupe).toEqual({ sqlQueries: 2, nPlusOne: true, test: 'orders.spec.ts:42' });
+    expect(entry?._reqray).toEqual({ sqlQueries: 2, nPlusOne: true, test: 'orders.spec.ts:42' });
   });
 
   it('exports masked values as stored, never the originals', () => {
@@ -87,7 +95,7 @@ describe('curl export', () => {
       [
         request({
           method: 'POST',
-          requestBody: { text: '{"orderId":3}', truncated: false },
+          requestBody: { text: '{"orderId":3}', truncated: false, bytes: 13 },
         }),
       ],
       'http://localhost:3000',
@@ -121,5 +129,36 @@ describe('curl export', () => {
 
   it('says out loud that masked values will not authenticate', () => {
     expect(toCurlScript([request()], 'http://x')).toContain('masked');
+  });
+
+  it('a cut export says it was cut, in both formats', () => {
+    // An export is evidence — it gets attached to a ticket and argued from.
+    // One presented as complete when it is a slice is worse than none.
+    const note = '3 older requests matched and were left out';
+
+    expect(toCurlScript([request()], 'http://x', note)).toContain(note);
+    const har = toHar([request()], new Date(0), note) as {
+      log: { comment?: string };
+    };
+    expect(har.log.comment).toBe(note);
+  });
+
+  it('an export that carried everything claims nothing', () => {
+    expect(toCurlScript([request()], 'http://x')).not.toContain('left out');
+    expect((toHar([request()]) as { log: { comment?: string } }).log.comment).toBeUndefined();
+  });
+});
+
+describe('a script somebody will run', () => {
+  it('keeps a test name on its comment line, whatever it holds', () => {
+    // The name is attacker-reachable: any client can send the header. A line
+    // break in it would end the comment and start a command.
+    const script = toCurlScript(
+      [request({ test: 'checkout\ntouch /tmp/owned' })],
+      'http://localhost:3000',
+    );
+
+    expect(script).toContain('# 200 · 43 ms · checkout touch /tmp/owned');
+    expect(script.split('\n').filter((line) => line.startsWith('touch'))).toEqual([]);
   });
 });

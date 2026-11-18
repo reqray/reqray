@@ -1,0 +1,396 @@
+/* The history screen: one metric over one period, and a way into every point. */
+
+.history {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+
+.history-periods {
+  display: flex;
+  gap: 6px;
+}
+
+/* Label above the control rather than beside it: four controls in a row all
+   reading "metric: …" is a sentence nobody finishes. */
+.history-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.history-pick select {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg2);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.history-pick select:focus-visible {
+  outline: 1px solid var(--acc);
+  outline-offset: 1px;
+}
+
+/* The period's own numbers, in two columns of label and value.
+ *
+ * Above the chart, because a shape answers "when" and only a number answers
+ * "how much" — and the second question is the one somebody acts on. */
+.history-totals {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 14px;
+  align-items: baseline;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+@media (min-width: 1100px) {
+  /* Three pairs across on a wide screen: the six figures are one glance, not
+     a column to scroll. */
+  .history-totals {
+    grid-template-columns: repeat(3, auto minmax(0, 1fr));
+  }
+}
+
+.history-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+}
+
+.history-legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.key-companion {
+  color: var(--warn);
+}
+
+/* The plot with its rail beside it.
+ *
+ * It settles in rather than appearing — the same entrance an opened route's
+ * charts make, so the two screens read as one product. */
+.history-chart {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-height: 180px;
+  animation: charts-in var(--t-slow) var(--ease-glide);
+}
+
+/* The plot and its overlaid scales; the rail lives outside this box. */
+.history-plot-box {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+/* The rail: the requests behind what is being looked at.
+ *
+ * Docked beside the plot rather than floated over it — a popup anchored to
+ * the hovered column covered the very stretch of the line being read, and a
+ * corner it flipped to still covered a quarter of the chart. Docked, it
+ * covers nothing, holds still, and is worth having before any hovering
+ * happens: the slowest requests of the whole period in view. */
+.history-rail {
+  flex: none;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.rail-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* Release the pin, and the way from the rail into the full list — in the
+   rail's own quiet voice, because the rows are the loud thing here. */
+.rail-unpin,
+.rail-open {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--fg3);
+  font-family: var(--mono);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.rail-unpin:hover,
+.rail-open:hover {
+  color: var(--acc);
+}
+
+.rail-open {
+  margin-top: 8px;
+  text-align: left;
+}
+
+/* The ticks label the plot's columns, so they stop where the plot does. */
+.history-ticks {
+  margin-right: 372px;
+}
+
+@media (max-width: 1100px) {
+  /* Below this the rail would squeeze the one thing the screen is for. */
+  .history-rail {
+    display: none;
+  }
+
+  .history-ticks {
+    margin-right: 0;
+  }
+}
+
+/* A new question sweeps its answer in from the left.
+ *
+ * A scaled clip rather than a dashed stroke: the plot is stretched to the
+ * width of the screen, dash lengths stretch with it, and the classic
+ * dashoffset trick draws at a different speed on every window size. Keyed in
+ * the JSX so a new metric or period replays it — and a wheel zoom does not,
+ * because replaying a sweep forty times a second is blinking with a schedule. */
+.chart-reveal {
+  transform-origin: 0 0;
+  animation: chart-reveal 500ms ease-out both;
+}
+
+@keyframes chart-reveal {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+/* The numbers a height means.
+ *
+ * Over the plot rather than beside it: a column of labels to the left would
+ * take width from the one thing on the screen that needs it, and these three
+ * numbers are read once and then ignored. `pointer-events: none` because the
+ * plot underneath is a control, and a label that swallows a click on a column
+ * is the failure this screen exists to avoid. */
+.history-axis {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--acc);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.history-axis-right {
+  left: auto;
+  right: 4px;
+  align-items: flex-end;
+  color: var(--warn);
+}
+
+.history-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg3);
+}
+
+/* Idle, the rail answers for the period; hovering narrows it to a column and
+   clicking pins one. The switch is visible as the title line changing colour
+   and wording, nothing moves. */
+.history-rail[data-scope="column"] .rail-title,
+.history-rail[data-scope="pinned"] .rail-title {
+  color: var(--acc);
+}
+
+/* The chart takes the room that is left.
+ *
+ * A history screen whose picture is a strip along the top and whose bottom
+ * two thirds are empty says the picture is an afterthought. It is the screen.
+ * `flex` rather than a height, deliberately: inside a column the two fight
+ * and flex wins, so the figure below is a floor and not a size. */
+.history-plot {
+  flex: 1;
+  min-height: 180px;
+}
+
+.history-svg {
+  height: 100%;
+  min-height: 180px;
+  transition: opacity var(--t-fast) ease-out;
+}
+
+/* Re-reading: the old chart stays and dims rather than vanishing. A window
+   that blanks on every zoom notch is the blinking this screen was cured of.
+   The dim waits before engaging, so the quick read of a live tick — over in
+   well under the delay — never registers, and only a genuinely slow answer
+   (a long wheel spin, a cold store) shows as one. */
+.history-plot[data-busy="true"] .history-svg {
+  opacity: 0.6;
+  transition-delay: 300ms;
+}
+
+/* The hover band glides between columns instead of teleporting. */
+.history-svg .chart-hover {
+  transition:
+    x 70ms ease-out,
+    width 70ms ease-out;
+}
+
+/* The pinned column: held on the chart while the pointer travels to the
+   rail, so the band and the list visibly mean each other. */
+.history-svg .chart-pin {
+  fill: var(--acc);
+  fill-opacity: 0.14;
+  stroke: var(--acc);
+  stroke-opacity: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The period before, behind the line it is compared with. Faint and dashed:
+   it is context, and context that competes with the reading is noise. */
+.chart-ghost {
+  stroke: var(--fg4);
+  stroke-width: 1.5;
+  fill: none;
+  opacity: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The chips that name the rules, along the top of the plot. `pointer-events`
+   off for the layer, on for the chip: the plot underneath is a control, and
+   only the chip itself has anything to say to the pointer. */
+.history-events {
+  position: absolute;
+  /* Below the axis's top reading rather than across it: two labels in one
+     corner are one unreadable label. */
+  top: 18px;
+  left: 0;
+  right: 0;
+  height: 16px;
+  pointer-events: none;
+}
+
+.event-chip {
+  position: absolute;
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  border: 1px solid var(--warn-line);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--warn);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.event-chip[data-kind="restart"] {
+  border-color: var(--acc-line);
+  color: var(--acc);
+}
+
+/* A moment the panel witnessed: a pattern first seen, a process starting. */
+.chart-event {
+  stroke: var(--warn);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The second pinned column of a comparison. */
+.history-svg .chart-pin-b {
+  fill: var(--warn);
+  fill-opacity: 0.12;
+  stroke: var(--warn);
+}
+
+/* A and B, as figures rather than as two lists. */
+.rail-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+}
+
+.rail-compare-side {
+  display: grid;
+  grid-template-columns: 14px auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+}
+
+/* What the shape is made of — absent when nothing explains it. */
+.rail-changed {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.changed-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+/* The second metric is on its own scale, so it is drawn as a line of its own
+   colour rather than as more of the first one. */
+.chart-companion {
+  stroke: var(--warn);
+  stroke-dasharray: 4 3;
+}
+
+.history-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.history-empty {
+  padding: 24px 4px;
+  font-size: 13px;
+}

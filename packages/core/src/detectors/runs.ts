@@ -15,10 +15,31 @@ export interface TimedSpan {
   readonly startedAt: number;
   readonly duration: number;
   readonly callsite: Callsite | null;
+  /**
+   * Milliseconds the span spent queueing before it could start.
+   *
+   * Absent for everything that does not queue. Where it is present it is the
+   * difference between when the code *asked* for the work and when the work
+   * began — and that difference is what tells a loop apart from a pool.
+   */
+  readonly waitMs?: number | null;
 }
 
 export function endOf(span: TimedSpan): number {
   return span.startedAt + span.duration;
+}
+
+/**
+ * When the code asked for this work, rather than when it got to run.
+ *
+ * A pool with one connection turns five queries issued through `Promise.all`
+ * into five spans that follow one another exactly like a loop: the same SQL,
+ * the same line, no overlap. Judged on when they *ran*, they are an N+1 and
+ * the advice would be to parallelise code that is already parallel. Judged on
+ * when they were *issued*, they all start at once, which is the truth.
+ */
+export function issuedAt(span: TimedSpan): number {
+  return span.startedAt - (span.waitMs ?? 0);
 }
 
 /**
@@ -52,6 +73,10 @@ export function splitRuns<T extends TimedSpan>(sorted: readonly T[], maxGapMs: n
  * A loop is a waterfall: each call starts after the previous one finished.
  * Calls issued through `Promise.all` overlap — that is already optimised,
  * nothing to fix.
+ *
+ * Measured from when each call was issued, not from when it started running:
+ * see {@link issuedAt}. For everything that never queues the two are the same
+ * number.
  */
 export function overlapRatio(run: readonly TimedSpan[]): number {
   if (run.length < 2) return 0;
@@ -62,7 +87,7 @@ export function overlapRatio(run: readonly TimedSpan[]): number {
     const current = run[i];
     if (!previous || !current) continue;
     const overlap =
-      Math.min(endOf(previous), endOf(current)) - Math.max(previous.startedAt, current.startedAt);
+      Math.min(endOf(previous), endOf(current)) - Math.max(issuedAt(previous), issuedAt(current));
     if (overlap > 0) overlapping++;
   }
   return overlapping / (run.length - 1);

@@ -1,8 +1,8 @@
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { current, fingerprintSql, type RecordedRequest, record } from '@loupe/core';
-import { loupe } from '@loupe/express';
-import { type MemoryStore, memoryTransport } from '@loupe/transport-memory';
+import { current, fingerprintSql, type RecordedRequest, record } from '@reqray/core';
+import { reqray } from '@reqray/express';
+import { type MemoryStore, memoryTransport } from '@reqray/store-memory';
 import express, { type Express } from 'express';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -62,10 +62,10 @@ interface Harness {
   readonly store: MemoryStore;
 }
 
-function harness(options: Parameters<typeof loupe>[0] = {}): Harness {
+function harness(options: Parameters<typeof reqray>[0] = {}): Harness {
   const store = memoryTransport();
   const app = express();
-  const inspector = loupe({ mode: 'development', transport: store, ...options });
+  const inspector = reqray({ mode: 'development', transport: store, ...options });
 
   app.use(express.json());
   app.use(inspector.middleware);
@@ -133,27 +133,54 @@ describe('Express adapter', () => {
 
   it('does not alter the application response', async () => {
     const { app } = harness();
-    const withLoupe = await serve(app);
+    const withReqray = await serve(app);
 
     const plain = express();
     plain.get('/orders', (_req, res) => {
       res.json({ orders: [1, 2] });
     });
-    const withoutLoupe = await serve(plain);
+    const withoutReqray = await serve(plain);
 
     const [a, b] = await Promise.all([
-      fetch(`${withLoupe}/orders`),
-      fetch(`${withoutLoupe}/orders`),
+      fetch(`${withReqray}/orders`),
+      fetch(`${withoutReqray}/orders`),
     ]);
 
     expect(a.status).toBe(b.status);
     expect(await a.json()).toEqual(await b.json());
   });
 
+  it('hands every argument of res.json on to the application’s own', async () => {
+    // Express 4 takes a status beside the body: `res.json(500, { error })`.
+    // Forwarding only the first argument turned that into a 200 whose body
+    // was `500`. Checked against a stand-in for the original, so the test
+    // does not depend on which Express major is installed.
+    const store = memoryTransport();
+    const app = express();
+    const inspector = reqray({ mode: 'development', transport: store });
+    let seen: unknown[] = [];
+    app.use((_req, res, next) => {
+      res.json = ((...args: unknown[]) => {
+        seen = args;
+        return res.end();
+      }) as typeof res.json;
+      next();
+    });
+    app.use(inspector.middleware);
+    app.get('/legacy', (_req, res) => {
+      (res.json as (...args: unknown[]) => unknown)(500, { error: 'out of stock' });
+    });
+
+    await fetch(`${await serve(app)}/legacy`);
+
+    expect(seen).toEqual([500, { error: 'out of stock' }]);
+    expect((await waitForRecord(store)).responseBody?.text).toContain('out of stock');
+  });
+
   it('request context is visible inside an async handler', async () => {
     const store = memoryTransport();
     const app = express();
-    const inspector = loupe({ mode: 'development', transport: store });
+    const inspector = reqray({ mode: 'development', transport: store });
     app.use(inspector.middleware);
 
     let seenId: string | undefined;
@@ -219,10 +246,10 @@ describe('Express adapter', () => {
     expect(recorded.findings[0]?.costMs).toBeGreaterThan(0);
   });
 
-  it('disabled Loupe creates no scope and records nothing', async () => {
+  it('disabled Reqray creates no scope and records nothing', async () => {
     const store = memoryTransport();
     const app = express();
-    app.use(loupe({ enabled: false, transport: store }).middleware);
+    app.use(reqray({ enabled: false, transport: store }).middleware);
 
     let scopeSeen: unknown = 'never called';
     app.get('/orders', (_req, res) => {
@@ -239,12 +266,31 @@ describe('Express adapter', () => {
     expect(store.list()).toEqual([]);
   });
 
+  it('a disabled Reqray leaves the response object untouched', async () => {
+    // Not recording is not the same as costing nothing: the enabled path
+    // replaces `res.json` to capture the body, and a disabled one must not
+    // even get that far. The published "disabled Reqray costs zero" says so.
+    const app = express();
+    app.use(reqray({ enabled: false, transport: memoryTransport() }).middleware);
+
+    let wrapper = 'never called';
+    app.get('/orders', (_req, res) => {
+      wrapper = res.json.name;
+      res.json({ ok: true });
+    });
+
+    const base = await serve(app);
+    await fetch(`${base}/orders`);
+
+    expect(wrapper).toBe('json');
+  });
+
   describe('test provenance', () => {
     it('records the test a request came from', async () => {
       const { app, store } = harness();
       const base = await serve(app);
 
-      await fetch(`${base}/orders`, { headers: { 'x-loupe-test': 'orders.spec.ts:42' } });
+      await fetch(`${base}/orders`, { headers: { 'x-reqray-test': 'orders.spec.ts:42' } });
 
       expect((await waitForRecord(store)).test).toBe('orders.spec.ts:42');
     });
@@ -255,7 +301,7 @@ describe('Express adapter', () => {
       const name = 'orders.spec.ts:42 \u203a creates an order';
 
       await fetch(`${base}/orders`, {
-        headers: { 'x-loupe-test': encodeURIComponent(name) },
+        headers: { 'x-reqray-test': encodeURIComponent(name) },
       });
 
       expect((await waitForRecord(store)).test).toBe(name);
@@ -265,7 +311,7 @@ describe('Express adapter', () => {
       const { app, store } = harness();
       const base = await serve(app);
 
-      await fetch(`${base}/orders`, { headers: { 'x-loupe-test': '50% of the time' } });
+      await fetch(`${base}/orders`, { headers: { 'x-reqray-test': '50% of the time' } });
 
       expect((await waitForRecord(store)).test).toBe('50% of the time');
     });

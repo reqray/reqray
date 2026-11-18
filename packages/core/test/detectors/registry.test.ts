@@ -1,17 +1,12 @@
-import {
-  type RequestScope,
-  resetDetectors,
-  resolveOptions,
-  runDetectors,
-  setLogSink,
-} from '@loupe/core';
+import { type RequestScope, resolveOptions, runDetectors, setLogSink } from '@reqray/core';
+import { resetDetectors } from '@reqray/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { scenario } from '../fixtures/spans.js';
 
 const options = resolveOptions({ mode: 'development' });
 
 /** A request that is not itself slow: the budget detector stays out of the way. */
-const FACTS = { durationMs: 100, status: 200 };
+const FACTS = { durationMs: 100, status: 200, bytesOut: null, contentType: null };
 
 afterEach(() => {
   resetDetectors();
@@ -67,8 +62,16 @@ describe('running detectors', () => {
     // second one for the same detector. The budget detector is not among them:
     // this request is inside its budget, so it never reaches the spans.
     const warned = warn.mock.calls.map((call) => String(call[0]));
-    expect(warned).toHaveLength(4);
-    for (const id of ['n_plus_one', 'sequential_http', 'dup_http', 'dup_cache']) {
+    expect(warned).toHaveLength(7);
+    for (const id of [
+      'n_plus_one',
+      'sequential_http',
+      'dup_http',
+      'dup_cache',
+      'pool_wait',
+      'transaction_hold',
+      'slow_code',
+    ]) {
       expect(warned.some((message) => message.includes(id))).toBe(true);
     }
 

@@ -6,12 +6,13 @@
 import { once } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { type RecordedRequest, resetWarnings } from '@loupe/core';
-import { httpTransport, type IngestPayload } from '@loupe/transport-http';
+import { type RecordedRequest, timingOf, weightOf } from '@reqray/core';
+import { resetWarnings } from '@reqray/core/testing';
+import { httpTransport, type IngestPayload } from '@reqray/transport-http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 function record(id: string): RecordedRequest {
-  return {
+  const base = {
     id,
     method: 'GET',
     path: '/orders',
@@ -31,6 +32,13 @@ function record(id: string): RecordedRequest {
     droppedLogs: 0,
     test: null,
   };
+  return {
+    ...base,
+    timing: timingOf(base.spans, base.durationMs),
+    host: null,
+    weight: weightOf(base),
+    cost: null,
+  };
 }
 
 /** Collector stub: collects batches, fails on demand. */
@@ -39,6 +47,8 @@ interface Collector {
   readonly batches: RecordedRequest[][];
   /** While `true`, every ingest gets a 500. */
   failing: boolean;
+  /** With `failing`: answer 429 and this `Retry-After` instead. */
+  retryAfter: string | null;
   received(count: number, timeoutMs?: number): Promise<void>;
   close(): Promise<void>;
 }
@@ -52,7 +62,11 @@ async function startCollector(): Promise<Collector> {
     request.on('data', (chunk) => chunks.push(chunk));
     request.on('end', () => {
       if (collector.failing) {
-        response.writeHead(500).end();
+        if (collector.retryAfter) {
+          response.writeHead(429, { 'retry-after': collector.retryAfter }).end();
+        } else {
+          response.writeHead(500).end();
+        }
         return;
       }
       const payload = JSON.parse(Buffer.concat(chunks).toString()) as IngestPayload;
@@ -69,6 +83,7 @@ async function startCollector(): Promise<Collector> {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     batches,
     failing: false,
+    retryAfter: null,
     received(count, timeoutMs = 2_000) {
       return new Promise((resolve, reject) => {
         const deadline = setTimeout(
@@ -173,6 +188,47 @@ describe('backpressure', () => {
     await transport.close();
   });
 
+  it('evicts the oldest records when the queue outgrows its size cap', async () => {
+    // A count bounds nothing by itself: the default thousand records, each
+    // with bodies, is hundreds of megabytes held for a collector that is down.
+    const one = JSON.stringify(record('a')).length;
+    const transport = httpTransport({
+      url: collector.url,
+      batchSize: 10,
+      flushIntervalMs: 60_000,
+      maxQueueBytes: one * 2,
+    });
+
+    for (const id of ['a', 'b', 'c', 'd', 'e']) transport.send(record(id));
+    await transport.flush();
+
+    expect(collector.batches.flat().map((r) => r.id)).toEqual(['d', 'e']);
+    await transport.close();
+  });
+
+  it('stays away for as long as a busy collector asks', async () => {
+    collector.failing = true;
+    collector.retryAfter = '1';
+    const transport = httpTransport({
+      url: collector.url,
+      batchSize: 2,
+      flushIntervalMs: 10,
+      retryDelayMs: 10,
+    });
+
+    transport.send(record('a'));
+    transport.send(record('b'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    collector.failing = false;
+
+    // Its own backoff would have come back within tens of milliseconds.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(collector.batches).toHaveLength(0);
+
+    await collector.received(2, 5_000);
+    await transport.close();
+  });
+
   it('an unreachable collector neither crashes nor blocks the application', async () => {
     // A port from the closed collector: connections are refused instantly.
     const dead = collector.url;
@@ -220,6 +276,32 @@ describe('shutdown', () => {
 
     expect(collector.batches.flat().map((r) => r.id)).toEqual(['a']);
     await transport.close();
+  });
+
+  it('close waits for the batch on the wire and sends the tail behind it', async () => {
+    // What a busy process looks like at shutdown: one POST in flight, a few
+    // records queued behind it. Both used to be lost — flush stepped past the
+    // POST, and close then forbade the tail from ever being sent.
+    const transport = httpTransport({ url: collector.url, batchSize: 5, flushIntervalMs: 60_000 });
+
+    for (const id of ['a', 'b', 'c', 'd', 'e']) transport.send(record(id));
+    // Let the full batch start its POST.
+    await new Promise((resolve) => setImmediate(resolve));
+    for (const id of ['f', 'g', 'h']) transport.send(record(id));
+
+    await transport.flush();
+    await transport.close();
+
+    expect(collector.batches.flat().map((r) => r.id)).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+      'e',
+      'f',
+      'g',
+      'h',
+    ]);
   });
 
   it('after close nothing is sent and nothing crashes', async () => {

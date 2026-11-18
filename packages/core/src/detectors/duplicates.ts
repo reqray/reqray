@@ -10,10 +10,12 @@
  * - anything but GET/HEAD, and cache writes: repeating those may be the point;
  * - failures and retries — a second attempt after a 5xx is correct behaviour;
  * - calls whose URLs differ at all, query string included: a different URL is
- *   a different question, and collapsing them would invent a duplicate.
+ *   a different question, and collapsing them would invent a duplicate;
+ * - cache reads of one key that ask for different things: `HGET user:1 email`
+ *   and `HGET user:1 name` are two reads, not one read made twice.
  */
 
-import type { CacheSpan, Finding, FindingSeverity, HttpSpan, Span } from '../types.js';
+import type { CacheSpan, Callsite, Finding, FindingSeverity, HttpSpan } from '../types.js';
 import type { Detector } from './types.js';
 
 export interface DuplicateHttpOptions {
@@ -54,6 +56,19 @@ function savingOf(spans: readonly { duration: number }[]): number {
   return total - slowest;
 }
 
+/**
+ * Where else the same call is made from.
+ *
+ * The panel already prints the finding's own callsite, so the hint names only
+ * the *other* places — the half the reader cannot see yet.
+ */
+function otherSites(spans: readonly { callsite: Callsite | null }[]): string[] {
+  const site = (span: { callsite: Callsite | null }) =>
+    span.callsite ? `${span.callsite.relative}:${span.callsite.line}` : '';
+  const first = site(spans[0] ?? { callsite: null });
+  return [...new Set(spans.slice(1).map(site).filter(Boolean))].filter((place) => place !== first);
+}
+
 function group<T>(items: readonly T[], keyOf: (item: T) => string): Map<string, T[]> {
   const groups = new Map<string, T[]>();
   for (const item of items) {
@@ -91,13 +106,7 @@ export const duplicateHttp: Detector<DuplicateHttpOptions> = {
 
       const severity: FindingSeverity = costMs >= SEVERITY_WARN_MS ? 'warn' : 'info';
       const first = spans[0];
-      const site = (span: HttpSpan) =>
-        span.callsite ? `${span.callsite.relative}:${span.callsite.line}` : '';
-      // The panel already prints the finding's own callsite, so the hint names
-      // only the *other* places the same call is made from.
-      const others = [...new Set(spans.slice(1).map(site).filter(Boolean))].filter(
-        (place) => place !== site(first as HttpSpan),
-      );
+      const others = otherSites(spans);
 
       findings.push({
         detector: 'dup_http',
@@ -123,7 +132,19 @@ export const duplicateHttp: Detector<DuplicateHttpOptions> = {
   },
 };
 
-/** The same cache key read more than once in one request. */
+/**
+ * The whole read, as the driver sent it: `GET user:1`, `HGET user:1 email`.
+ *
+ * The command and the selecting arguments are part of the identity on
+ * purpose. `HGET user:1 email` and `HGET user:1 name` touch one key but read
+ * different values, and calling that pair a duplicate would be a false
+ * positive on a screen whose whole worth is that it does not cry wolf.
+ */
+function callOf(span: CacheSpan): string {
+  return span.command ? `${span.command} ${span.key}`.trimEnd() : span.key;
+}
+
+/** The same cache read made more than once in one request. */
 export const duplicateCache: Detector<DuplicateCacheOptions> = {
   id: 'dup_cache',
 
@@ -135,10 +156,11 @@ export const duplicateCache: Detector<DuplicateCacheOptions> = {
     );
 
     const findings: Finding[] = [];
-    for (const [key, spans] of group(reads, (span) => span.key)) {
+    for (const [call, spans] of group(reads, callOf)) {
       if (spans.length < options.threshold) continue;
 
       const first = spans[0];
+      const others = otherSites(spans);
       findings.push({
         detector: 'dup_cache',
         // Cache reads are cheap; this is a nudge about redundant work, not an
@@ -150,19 +172,17 @@ export const duplicateCache: Detector<DuplicateCacheOptions> = {
         evidence: {
           kind: 'duplicate',
           repeats: spans.length,
-          fingerprint: key,
-          sample: `cache.get ${key}`,
+          fingerprint: call,
+          sample: first?.command ? call : `cache.get ${call}`,
           totalMs: spans.reduce((sum, span) => sum + span.duration, 0),
           spanIds: spans.map((span) => span.id),
         },
-        hint: `"${key}" is read ${spans.length} times while handling one request — read it once and pass the value down.`,
+        hint:
+          `"${first?.key ?? call}" is read ${spans.length} times while handling one request` +
+          `${others.length > 0 ? `, also from ${others.join(' and ')}` : ''}` +
+          ' — read it once and pass the value down.',
       });
     }
     return findings;
   },
 };
-
-/** Narrowing helper shared with the budget detector. */
-export function isHttp(span: Span): span is HttpSpan {
-  return span.kind === 'http';
-}

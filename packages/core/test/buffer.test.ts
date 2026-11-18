@@ -1,4 +1,4 @@
-import { RingBuffer } from '@loupe/core';
+import { RingBuffer } from '@reqray/core';
 import { describe, expect, it } from 'vitest';
 
 describe('ring buffer', () => {

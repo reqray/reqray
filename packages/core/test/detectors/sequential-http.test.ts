@@ -7,7 +7,7 @@
  * invisible from timing.
  */
 
-import { type SequentialHttpOptions, sequentialHttp } from '@loupe/core';
+import { type SequentialHttpOptions, sequentialHttp } from '@reqray/core';
 import { describe, expect, it } from 'vitest';
 import { scenario } from '../fixtures/spans.js';
 
@@ -16,7 +16,12 @@ const options: SequentialHttpOptions = sequentialHttp.defaultOptions;
 const run = (
   scope: Parameters<typeof sequentialHttp.run>[0],
   overrides?: Partial<SequentialHttpOptions>,
-) => sequentialHttp.run(scope, { ...options, ...overrides }, { durationMs: 100, status: 200 });
+) =>
+  sequentialHttp.run(
+    scope,
+    { ...options, ...overrides },
+    { durationMs: 100, status: 200, bytesOut: null, contentType: null },
+  );
 
 const user = (id: number) => `https://api.example.com/users/${id}`;
 const LINE = 'src/services/enrich.ts:42';

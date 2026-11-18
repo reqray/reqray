@@ -1,14 +1,33 @@
 {
-  "name": "@loupe/server",
+  "name": "@reqray/server",
   "version": "0.0.0",
-  "description": "Loupe collector: batch ingestion from applications, storage, and the dashboard.",
+  "description": "Reqray collector: batch ingestion from applications, storage, and the dashboard.",
   "license": "MIT",
+  "keywords": [
+    "nodejs",
+    "debugging",
+    "profiling",
+    "n+1",
+    "sql",
+    "observability",
+    "devtools",
+    "fastify",
+    "express",
+    "nestjs"
+  ],
+  "homepage": "https://github.com/reqray/reqray#readme",
+  "bugs": "https://github.com/reqray/reqray/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reqray/reqray.git",
+    "directory": "packages/server"
+  },
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "bin": {
-    "loupe-server": "./dist/cli.js"
+    "reqray-server": "./dist/cli.js"
   },
   "exports": {
     ".": {
@@ -36,12 +55,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@loupe/core": "workspace:^",
-    "@loupe/dashboard": "workspace:^",
-    "@loupe/transport-memory": "workspace:^"
+    "@reqray/core": "workspace:^",
+    "@reqray/dashboard": "workspace:^",
+    "@reqray/transport-file": "workspace:^",
+    "@reqray/store-memory": "workspace:^",
+    "@reqray/store-sqlite": "workspace:^"
   },
   "devDependencies": {
-    "@loupe/transport-http": "workspace:^",
+    "@reqray/transport-http": "workspace:^",
     "@types/node": "catalog:",
     "tsup": "catalog:",
     "typescript": "catalog:"

@@ -1,0 +1,21 @@
+  GET /api/export   200   88ms   09:41:02.184   #9101
+
+  TIME                         88ms   49ms sql   39ms your code
+
+  WATERFALL                    2 spans
+                                     0ms      22ms       44ms       66ms      88ms
+                                     ├──────────┼──────────┼──────────┼──────────┤
+  fn    export.prices                ├───────────────────────────────────────────┤   88.0ms
+  sql     SELECT products p CROSS J… █████████████████████████                       49.0ms
+  —       uninstrumented                                      ███████████████████    38.0ms
+
+  FINDINGS                     1
+
+  ! HEAVY 3.8 MB response from 48,400 rows                                 3.8 MB   application/json
+        SELECT p.id, p.title, p.price, d::date AS day FROM products p CROSS JOIN …
+        src/shop.js:213
+        fix   Paginate it, or return only the fields the caller uses.
+
+  RESPONSE                     200   application/json   3.8 MB   48,400 rows
+
+  reqray show 9101 --sql        the query it ran, and where from

@@ -25,4 +25,19 @@ export interface Detector<Options> {
 export interface FinishedRequest {
   readonly durationMs: number;
   readonly status: number;
+  /**
+   * Bytes sent to the client, or `null` when nothing said how many.
+   *
+   * The scope knows about spans and nothing about the response, and a
+   * detector that reached for the body would be reading it a second time
+   * after it was already masked and capped.
+   */
+  readonly bytesOut: number | null;
+  /**
+   * The response's content type, without its parameters, or `null`.
+   *
+   * One header rather than the map: a detector that could read every header
+   * would end up reading the ones masking exists for.
+   */
+  readonly contentType: string | null;
 }

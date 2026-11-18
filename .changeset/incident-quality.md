@@ -1,7 +1,7 @@
 ---
-'@loupe/core': minor
-'@loupe/instrumentation-pg': minor
-'@loupe/dashboard': minor
+'@reqray/core': minor
+'@reqray/instrumentation-pg': minor
+'@reqray/dashboard': minor
 ---
 
 Main-screen quality and collaboration.

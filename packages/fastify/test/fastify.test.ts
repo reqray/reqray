@@ -1,6 +1,13 @@
-import { current, fingerprintSql, type RecordedRequest, record } from '@loupe/core';
-import { loupe } from '@loupe/fastify';
-import { type MemoryStore, memoryTransport } from '@loupe/transport-memory';
+import {
+  current,
+  fingerprintSql,
+  type RecordedRequest,
+  record,
+  setLogSink,
+  type Transport,
+} from '@reqray/core';
+import { reqray } from '@reqray/fastify';
+import { type MemoryStore, memoryTransport } from '@reqray/store-memory';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -50,7 +57,7 @@ async function harness(options: Record<string, unknown> = {}): Promise<{
 }> {
   const store = memoryTransport();
   const app = Fastify();
-  await app.register(loupe, { mode: 'development', transport: store, ...options });
+  await app.register(reqray, { mode: 'development', transport: store, ...options });
 
   app.get('/orders', async () => {
     fakeQuery('SELECT id FROM orders WHERE user_id = 8812', 8.6);
@@ -97,7 +104,7 @@ describe('Fastify adapter', () => {
   it('context travels from the onRequest hook to the handler', async () => {
     const store = memoryTransport();
     const app = Fastify();
-    await app.register(loupe, { mode: 'development', transport: store });
+    await app.register(reqray, { mode: 'development', transport: store });
 
     let seenId: string | undefined;
     app.get('/async', async () => {
@@ -134,15 +141,15 @@ describe('Fastify adapter', () => {
 
   it('does not alter the application response', async () => {
     const { app } = await harness();
-    const withLoupe = await serve(app);
+    const withReqray = await serve(app);
 
     const plain = Fastify();
     plain.get('/orders', async () => ({ orders: [1, 2] }));
-    const withoutLoupe = await serve(plain);
+    const withoutReqray = await serve(plain);
 
     const [a, b] = await Promise.all([
-      fetch(`${withLoupe}/orders`),
-      fetch(`${withoutLoupe}/orders`),
+      fetch(`${withReqray}/orders`),
+      fetch(`${withoutReqray}/orders`),
     ]);
 
     expect(a.status).toBe(b.status);
@@ -196,10 +203,38 @@ describe('Fastify adapter', () => {
     expect(recorded.findings[0]?.hint).toContain('include');
   });
 
-  it('disabled Loupe creates no scope and records nothing', async () => {
+  it('records a request the client gave up on', async () => {
+    // No response is sent, so `onResponse` never fires — and the request a
+    // client times out on is the slow one, the one worth seeing.
+    const { app, store } = await harness();
+    app.get('/slow', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      return { ok: true };
+    });
+    const base = await serve(app);
+
+    await fetch(`${base}/slow`, { signal: AbortSignal.timeout(50) }).catch(() => undefined);
+
+    expect(await waitForRecord(store)).toMatchObject({ method: 'GET', path: '/slow' });
+  });
+
+  it('never takes a stream for a body', async () => {
+    // `reply.send(stream)` hands `onSend` the stream itself. Recorded as an
+    // object, its internals would go into the buffer under key names no
+    // masking pattern matches.
+    const { Readable } = await import('node:stream');
+    const { app, store } = await harness();
+    app.get('/file', async (_request, reply) => reply.send(Readable.from(['streamed'])));
+    const base = await serve(app);
+
+    expect(await (await fetch(`${base}/file`)).text()).toBe('streamed');
+    expect((await waitForRecord(store)).responseBody).toBeNull();
+  });
+
+  it('disabled Reqray creates no scope and records nothing', async () => {
     const store = memoryTransport();
     const app = Fastify();
-    await app.register(loupe, { enabled: false, transport: store });
+    await app.register(reqray, { enabled: false, transport: store });
 
     let scopeSeen: unknown = 'never called';
     app.get('/orders', async () => {
@@ -215,9 +250,65 @@ describe('Fastify adapter', () => {
     expect(scopeSeen).toBeUndefined();
     expect(store.list()).toEqual([]);
   });
+
+  it('a disabled Reqray registers no hooks at all', async () => {
+    // Not recording is not the same as costing nothing: a hook that runs and
+    // returns early still runs, and still allocates what it was called with.
+    // The published "disabled Reqray costs zero" only holds if there is no hook.
+    const app = Fastify();
+    const added: string[] = [];
+    const addHook = app.addHook.bind(app);
+    app.addHook = ((name: string, handler: never) => {
+      added.push(name);
+      return (addHook as (name: never, handler: never) => unknown)(name as never, handler);
+    }) as typeof app.addHook;
+
+    await app.register(reqray, { enabled: false, transport: memoryTransport() });
+
+    expect(added).toEqual([]);
+  });
 });
 
 describe('panel in Fastify', () => {
+  it('mounts when the store is one of several transports', async () => {
+    // A store and a log are two transports over one stream of requests, and
+    // the panel reads the one that keeps anything. Getting this wrong is a
+    // panel that 404s with nothing in the log to say why.
+    const store = memoryTransport();
+    const log: Transport = { name: 'file', send: () => {} };
+    const { app } = await harness({ transport: [log, store] });
+    const base = await serve(app);
+
+    await fetch(`${base}/orders`);
+    await waitForRecord(store);
+
+    const response = await fetch(`${base}/_reqray/api/requests`);
+    const payload = (await response.json()) as { requests: Array<{ path: string }> };
+
+    expect(response.status).toBe(200);
+    expect(payload.requests.map((row) => row.path)).toEqual(['/orders']);
+  });
+
+  it('says why it did not mount when no transport keeps anything', async () => {
+    const warnings: string[] = [];
+    setLogSink({ info: () => {}, warn: (message) => warnings.push(message) });
+
+    const app = Fastify();
+    await app.register(reqray, {
+      mode: 'development',
+      transport: { name: 'http', send: () => {} } satisfies Transport,
+    });
+    app.get('/orders', async () => ({ ok: true }));
+    const base = await serve(app);
+
+    expect((await fetch(`${base}/_reqray/api/requests`)).status).toBe(404);
+    expect(warnings.join(' ')).toContain('the panel is not mounted');
+    expect(warnings.join(' ')).toContain('http');
+    // The application is untouched by any of it.
+    expect((await fetch(`${base}/orders`)).status).toBe(200);
+    setLogSink(null);
+  });
+
   it('responds itself without entering its own list', async () => {
     const { app, store } = await harness();
     const base = await serve(app);
@@ -225,7 +316,7 @@ describe('panel in Fastify', () => {
     await fetch(`${base}/orders`);
     await waitForRecord(store);
 
-    const response = await fetch(`${base}/_loupe/api/requests`);
+    const response = await fetch(`${base}/_reqray/api/requests`);
     const payload = (await response.json()) as { requests: Array<{ path: string }> };
     await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -251,7 +342,7 @@ describe('panel in Fastify', () => {
     await fetch(`${base}/orders`);
     await waitForRecord(store);
 
-    const comparison = (await fetch(`${base}/_loupe/api/replay`, {
+    const comparison = (await fetch(`${base}/_reqray/api/replay`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

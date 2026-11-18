@@ -1,8 +1,8 @@
 {
-  "name": "@loupe/bench",
+  "name": "@reqray/bench",
   "version": "0.0.0",
   "private": true,
-  "description": "Loupe overhead benchmark: latency, memory, event loop lag.",
+  "description": "Reqray overhead benchmark: latency, memory, event loop lag.",
   "type": "module",
   "engines": {
     "node": ">=20"

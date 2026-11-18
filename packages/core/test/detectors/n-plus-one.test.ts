@@ -5,7 +5,7 @@
  * first one and must not be smaller: a false positive is worse than a miss.
  */
 
-import { type NPlusOneOptions, nPlusOne, resolveOptions } from '@loupe/core';
+import { type NPlusOneOptions, nPlusOne, resolveOptions } from '@reqray/core';
 import { describe, expect, it } from 'vitest';
 import { scenario } from '../fixtures/spans.js';
 
@@ -14,7 +14,11 @@ const options: NPlusOneOptions = nPlusOne.defaultOptions;
 const run = (scope: Parameters<typeof nPlusOne.run>[0], overrides?: Partial<NPlusOneOptions>) =>
   // The N+1 detector ignores the request facts; the budget detector is the
   // one that reads them.
-  nPlusOne.run(scope, { ...options, ...overrides }, { durationMs: 100, status: 200 });
+  nPlusOne.run(
+    scope,
+    { ...options, ...overrides },
+    { durationMs: 100, status: 200, bytesOut: null, contentType: null },
+  );
 
 const ORDERS = 'SELECT id, total FROM orders WHERE user_id = 8812 ORDER BY created_at DESC';
 const lineItems = (orderId: number) => `SELECT * FROM line_items WHERE order_id = ${orderId}`;
@@ -62,7 +66,7 @@ describe('finds', () => {
     const [finding] = run(scope);
 
     expect(finding?.evidence).toMatchObject({ kind: 'n_plus_one' });
-    expect((finding?.evidence as { totalMs: number }).totalMs).toBeCloseTo(42.3, 5);
+    expect((finding?.evidence as { totalMs: number } | undefined)?.totalMs).toBeCloseTo(42.3, 5);
     expect(finding?.costMs).toBeCloseTo(41.4, 5);
   });
 
@@ -137,13 +141,124 @@ describe('finds', () => {
   });
 });
 
+describe('finds, though the query has a LIMIT', () => {
+  const firstItem = (orderId: number) =>
+    `SELECT * FROM line_items WHERE order_id = ${orderId} ORDER BY id LIMIT 1`;
+  const topItems = (orderId: number) =>
+    `SELECT * FROM line_items WHERE order_id = ${orderId} ORDER BY price DESC LIMIT 3`;
+
+  it('findFirst in a loop: a limit of one is not a page', () => {
+    const scope = scenario()
+      .loop(10, (i) => ({ sql: firstItem(i), duration: 3, callsite: 'src/orders.ts:118', rows: 1 }))
+      .done();
+
+    expect(run(scope)).toHaveLength(1);
+  });
+
+  it('a lookup per parent whose answers differ in size is not paging', () => {
+    const sizes = [3, 1, 3, 0, 2, 3, 3, 1];
+    const scope = scenario()
+      .loop(sizes.length, (i) => ({
+        sql: topItems(i),
+        duration: 4,
+        callsite: 'src/orders.ts:118',
+        rows: sizes[i] ?? 0,
+      }))
+      .done();
+
+    expect(run(scope)).toHaveLength(1);
+  });
+});
+
 describe('does NOT find', () => {
+  it('a table read a page at a time is the fix, not the problem', () => {
+    // Keyset paging: same SQL, same line, one after another — and every page
+    // full until the last. "Fetch it with one IN" is not advice for this.
+    const page = (after: number) =>
+      `SELECT * FROM events WHERE id > ${after} ORDER BY id LIMIT 500`;
+    const sizes = [500, 500, 500, 500, 500, 137];
+    const scope = scenario()
+      .loop(sizes.length, (i) => ({
+        sql: page(i * 500),
+        duration: 12,
+        callsite: 'src/export.ts:40',
+        rows: sizes[i] ?? 0,
+      }))
+      .done();
+
+    expect(run(scope)).toEqual([]);
+  });
+
+  it('paging whose last page happens to be full is still paging', () => {
+    const scope = scenario()
+      .loop(6, (i) => ({
+        sql: `SELECT * FROM events ORDER BY id LIMIT 200 OFFSET ${i * 200}`,
+        duration: 12,
+        callsite: 'src/export.ts:40',
+        rows: 200,
+      }))
+      .done();
+
+    expect(run(scope)).toEqual([]);
+  });
+
   it('Promise.all of 20 identical queries is already optimized', () => {
     const scope = scenario()
       .parallel(20, (i) => ({ sql: lineItems(i), duration: 10, callsite: 'src/orders.ts:118' }))
       .done();
 
     expect(run(scope)).toHaveLength(0);
+  });
+
+  it('a pool of one, not a loop: queries issued together that had to queue', () => {
+    // Five queries through `Promise.all` on a pool with one connection come
+    // out looking exactly like a loop — same SQL, same line, no overlap,
+    // because the pool ran them one after another. The code is already
+    // parallel; the advice to parallelise it would be nonsense, and the
+    // number that says so is the wait in front of each one.
+    const scope = scenario()
+      .query({ sql: lineItems(1), duration: 150, callsite: 'src/reports.ts:22', at: 0 })
+      .query({
+        sql: lineItems(2),
+        duration: 150,
+        callsite: 'src/reports.ts:22',
+        at: 150,
+        waitMs: 150,
+      })
+      .query({
+        sql: lineItems(3),
+        duration: 150,
+        callsite: 'src/reports.ts:22',
+        at: 300,
+        waitMs: 300,
+      })
+      .query({
+        sql: lineItems(4),
+        duration: 150,
+        callsite: 'src/reports.ts:22',
+        at: 450,
+        waitMs: 450,
+      })
+      .query({
+        sql: lineItems(5),
+        duration: 150,
+        callsite: 'src/reports.ts:22',
+        at: 600,
+        waitMs: 600,
+      })
+      .done();
+
+    expect(run(scope)).toHaveLength(0);
+  });
+
+  it('but the same five without a queue in front of them are a loop', () => {
+    // The other side of the previous case: identical timing, no waits, so
+    // nothing imposed the order but the code itself.
+    const scope = scenario()
+      .loop(5, (i) => ({ sql: lineItems(i), duration: 150, callsite: 'src/reports.ts:22' }))
+      .done();
+
+    expect(run(scope)).toHaveLength(1);
   });
 
   it('partially parallel batches of 4 are not a loop either', () => {

@@ -1,45 +1,49 @@
 /**
- * `@loupe/nestjs` — NestJS adapter.
+ * `@reqray/nestjs` — NestJS adapter.
  *
  * One module in `imports`, nothing else. Underneath it defers to the existing
- * platform adapters: on Express (the Nest default) the `@loupe/express`
+ * platform adapters: on Express (the Nest default) the `@reqray/express`
  * middleware goes through the middleware consumer, on Fastify the
- * `@loupe/fastify` plugin is registered on the underlying instance.
+ * `@reqray/fastify` plugin is registered on the underlying instance.
  *
  * The one thing neither platform adapter can see under Nest is the exception:
  * Nest intercepts it before Express error middleware or Fastify's `onError`
- * ever run. A global filter stamps it onto the request/response and then
- * defers to Nest's default handling, so behaviour does not change.
+ * ever run. A global interceptor stamps it onto the request/response as it
+ * passes, and passes it on: handling stays with whichever filter the
+ * application has, or with Nest's default.
  *
  * Injection note: everything is an explicit `@Inject(token)` — this package
  * is built without decorator metadata emission.
  */
 
 import { createRequire } from 'node:module';
-import type { Loupe, LoupeInit } from '@loupe/core';
-import { reportInstrumentation } from '@loupe/core';
 import {
-  recordFailure as expressFailure,
-  loupe as expressLoupe,
-  type LoupeExpress,
-} from '@loupe/express';
-import { recordFailure as fastifyFailure, loupe as fastifyLoupe } from '@loupe/fastify';
-import {
-  type ArgumentsHost,
-  Catch,
+  type CallHandler,
   type DynamicModule,
+  type ExecutionContext,
   HttpException,
   Inject,
+  Injectable,
   type MiddlewareConsumer,
   Module,
+  type NestInterceptor,
   type NestModule,
   type OnModuleInit,
 } from '@nestjs/common';
-import { APP_FILTER, BaseExceptionFilter, HttpAdapterHost } from '@nestjs/core';
+import { APP_INTERCEPTOR, HttpAdapterHost } from '@nestjs/core';
+import type { Reqray, ReqrayInit } from '@reqray/core';
+import { reportInstrumentation } from '@reqray/core';
+import {
+  recordFailure as expressFailure,
+  reqray as expressReqray,
+  type ReqrayExpress,
+} from '@reqray/express';
+import { recordFailure as fastifyFailure, reqray as fastifyReqray } from '@reqray/fastify';
 import type { FastifyInstance } from 'fastify';
+import { type Observable, tap } from 'rxjs';
 
-/** Token the Loupe options travel under inside the Nest container. */
-export const LOUPE_OPTIONS = Symbol.for('loupe.nestjs.options');
+/** Token the Reqray options travel under inside the Nest container. */
+export const REQRAY_OPTIONS = Symbol.for('reqray.nestjs.options');
 
 function nestVersion(): string | undefined {
   try {
@@ -63,72 +67,85 @@ function allRoutes(): string {
 }
 
 /**
- * Global filter: records the exception, then hands it to Nest's default
- * handling unchanged.
+ * Global interceptor: records the exception on its way past, and does nothing
+ * else with it.
+ *
+ * An observer rather than a filter. A catch-all filter registered by an
+ * imported module is picked over the application's own, so the first version
+ * of this — a filter deferring to Nest's default handling — replaced whatever
+ * error responses the application had written with Nest's. An interceptor
+ * never decides what the client is told.
  *
  * `HttpException` is Nest control flow (404, validation), not a crash — those
- * requests are recorded with their status anyway, like in every adapter.
+ * requests are recorded with their status anyway, like in every adapter. So
+ * is an error thrown by a guard, which runs before any interceptor does.
  */
-@Catch()
-export class LoupeExceptionFilter extends BaseExceptionFilter {
-  override catch(exception: unknown, host: ArgumentsHost): void {
-    if (host.getType() === 'http' && !(exception instanceof HttpException)) {
-      try {
-        const http = host.switchToHttp();
-        // One of the two matches the platform; the other is a safe no-op.
-        expressFailure(http.getResponse(), exception);
-        fastifyFailure(http.getRequest(), exception);
-      } catch {
-        // Recording must never interfere with error handling itself.
-      }
-    }
-    super.catch(exception, host);
+@Injectable()
+export class ReqrayErrorInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    if (context.getType() !== 'http') return next.handle();
+
+    return next.handle().pipe(
+      tap({
+        error: (exception: unknown) => {
+          if (exception instanceof HttpException) return;
+          try {
+            const http = context.switchToHttp();
+            // One of the two matches the platform; the other is a safe no-op.
+            expressFailure(http.getResponse(), exception);
+            fastifyFailure(http.getRequest(), exception);
+          } catch {
+            // Recording must never interfere with error handling itself.
+          }
+        },
+      }),
+    );
   }
 }
 
 /**
- * Loupe module for NestJS.
+ * Reqray module for NestJS.
  *
  * @example
  * ```ts
  * @Module({
- *   imports: [LoupeModule.forRoot()],
+ *   imports: [ReqrayModule.forRoot()],
  * })
  * export class AppModule {}
  * ```
  */
 @Module({})
-export class LoupeModule implements NestModule, OnModuleInit {
-  static forRoot(options: LoupeInit = {}): DynamicModule {
+export class ReqrayModule implements NestModule, OnModuleInit {
+  static forRoot(options: ReqrayInit = {}): DynamicModule {
     return {
-      module: LoupeModule,
+      module: ReqrayModule,
       providers: [
-        { provide: LOUPE_OPTIONS, useValue: options },
-        { provide: APP_FILTER, useClass: LoupeExceptionFilter },
+        { provide: REQRAY_OPTIONS, useValue: options },
+        { provide: APP_INTERCEPTOR, useClass: ReqrayErrorInterceptor },
       ],
     };
   }
 
   /** The Express inspector, when the platform is Express. */
-  #express: LoupeExpress | null = null;
+  #express: ReqrayExpress | null = null;
 
   readonly #adapterHost: HttpAdapterHost;
-  readonly #options: LoupeInit;
+  readonly #options: ReqrayInit;
 
   constructor(
     @Inject(HttpAdapterHost) adapterHost: HttpAdapterHost,
-    @Inject(LOUPE_OPTIONS) options: LoupeInit,
+    @Inject(REQRAY_OPTIONS) options: ReqrayInit,
   ) {
     this.#adapterHost = adapterHost;
     this.#options = options;
   }
 
   /** Runtime of the platform adapter — for tests and manual access. */
-  get loupe(): Loupe | null {
+  get reqray(): Reqray | null {
     if (this.#express) return this.#express.runtime;
     if (this.#platform() === 'fastify') {
       const instance = this.#adapterHost.httpAdapter?.getInstance<FastifyInstance>();
-      return (instance as FastifyInstance & { loupe?: Loupe })?.loupe ?? null;
+      return (instance as FastifyInstance & { reqray?: Reqray })?.reqray ?? null;
     }
     return null;
   }
@@ -147,7 +164,7 @@ export class LoupeModule implements NestModule, OnModuleInit {
       ok: true,
     });
 
-    this.#express = expressLoupe(this.#options);
+    this.#express = expressReqray(this.#options);
     consumer.apply(this.#express.middleware).forRoutes(allRoutes());
   }
 
@@ -162,6 +179,6 @@ export class LoupeModule implements NestModule, OnModuleInit {
     });
 
     const instance = this.#adapterHost.httpAdapter.getInstance<FastifyInstance>();
-    await instance.register(fastifyLoupe, this.#options);
+    await instance.register(fastifyReqray, this.#options);
   }
 }

@@ -1,4 +1,4 @@
-import { recordBody, resolveOptions } from '@loupe/core';
+import { recordBody, resolveOptions } from '@reqray/core';
 import { describe, expect, it } from 'vitest';
 
 const { redact } = resolveOptions();
@@ -14,7 +14,11 @@ describe('recording bodies into the buffer', () => {
     // The fast path: nothing to mask is proven by a substring scan, so the
     // text must come through byte-for-byte, without a parse/serialize cycle.
     const text = '{"orders":[{"id":1,"total":"12.50"}],"count":1}';
-    expect(recordBody(text, redact)).toEqual({ text, truncated: false });
+    expect(recordBody(text, redact)).toEqual({
+      text,
+      truncated: false,
+      bytes: Buffer.byteLength(text),
+    });
   });
 
   it('masks a field in serialized JSON', () => {
@@ -38,7 +42,11 @@ describe('recording bodies into the buffer', () => {
 
   it('plain text without sensitive words is stored as is', () => {
     const text = 'plain text response, nothing to hide';
-    expect(recordBody(text, redact)).toEqual({ text, truncated: false });
+    expect(recordBody(text, redact)).toEqual({
+      text,
+      truncated: false,
+      bytes: Buffer.byteLength(text),
+    });
   });
 
   it('an urlencoded body with a password never reaches the buffer raw', () => {
@@ -58,7 +66,9 @@ describe('recording bodies into the buffer', () => {
   it('truncates text at the cap and marks it', () => {
     const options = { ...redact, maxBodyLength: 10 };
     const stored = recordBody('0123456789ABCDEF', options);
-    expect(stored).toEqual({ text: '0123456789', truncated: true });
+    // The size is of the body, not of the cap: a panel that reports its own
+    // limit back as a measurement is reporting its settings.
+    expect(stored).toEqual({ text: '0123456789', truncated: true, bytes: 16 });
   });
 
   it('a binary body becomes a marker, not megabytes', () => {
@@ -69,5 +79,20 @@ describe('recording bodies into the buffer', () => {
   it('broken JSON with a sensitive word is not stored raw', () => {
     const stored = recordBody('{"password": "hunter2', redact);
     expect(stored?.text).not.toContain('hunter2');
+  });
+});
+
+describe('a stream is not a body', () => {
+  it('records nothing for a Node stream or a web stream', async () => {
+    // Walking one would serialize its internals: an incoming request carries
+    // `rawHeaders`, authorization and cookies included, under a key no
+    // masking pattern matches.
+    const { Readable } = await import('node:stream');
+    const node = Object.assign(Readable.from(['x']), {
+      rawHeaders: ['authorization', 'Bearer secret-value'],
+    });
+
+    expect(recordBody(node, redact)).toBeNull();
+    expect(recordBody(new ReadableStream(), redact)).toBeNull();
   });
 });

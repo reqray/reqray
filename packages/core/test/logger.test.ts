@@ -1,4 +1,5 @@
-import { resetWarnings, setLogSink, warn, warnOnce } from '@loupe/core';
+import { setLogSink, warn, warnOnce } from '@reqray/core';
+import { resetWarnings } from '@reqray/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
@@ -12,7 +13,7 @@ describe('logger', () => {
     setLogSink(sink);
 
     warn('pg: failed to patch');
-    expect(sink.warn).toHaveBeenCalledWith('loupe: pg: failed to patch');
+    expect(sink.warn).toHaveBeenCalledWith('reqray: pg: failed to patch');
   });
 
   it('warns exactly once per key', () => {

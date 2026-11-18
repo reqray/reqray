@@ -1,4 +1,5 @@
-import { current, record, resolveOptions } from '@loupe/core';
+import { current, nPlusOne, record, resolveOptions, setLogSink } from '@reqray/core';
+import { resetWarnings } from '@reqray/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
@@ -74,7 +75,7 @@ describe('resolving options', () => {
   });
 });
 
-describe('disabled Loupe', () => {
+describe('disabled Reqray', () => {
   it('disabled by default in production: no scope is created and recording is zero work', () => {
     vi.stubEnv('NODE_ENV', 'production');
 
@@ -85,5 +86,43 @@ describe('disabled Loupe', () => {
     expect(
       record(current(), { kind: 'db', sql: 'SELECT 1', fingerprint: 'SELECT ?', duration: 1 }),
     ).toBeNull();
+  });
+
+  it('an explicit production mode switches it off, whatever NODE_ENV says', () => {
+    // One question, one answer: `enabled` follows the mode, not a second
+    // reading of the environment the mode was decided from.
+    vi.stubEnv('NODE_ENV', 'development');
+    const options = resolveOptions({ mode: 'production' });
+
+    expect(options.mode).toBe('production');
+    expect(options.enabled).toBe(false);
+  });
+
+  it('an option the detector does not have is refused, out loud', () => {
+    // From JavaScript nothing type-checks this, and silently freezing a typo
+    // into the options means watching a threshold you think you raised do
+    // nothing at all.
+    const lines: string[] = [];
+    resetWarnings();
+    setLogSink({ info: () => undefined, warn: (message) => void lines.push(message) });
+
+    const options = resolveOptions({
+      detect: { nPlusOne: { treshold: 10 } as never },
+    });
+
+    expect(options.detect.nPlusOne).not.toHaveProperty('treshold');
+    expect(options.detect.nPlusOne?.threshold).toBe(nPlusOne.defaultOptions.threshold);
+    expect(lines[0]).toContain('n_plus_one has no option "treshold"');
+    setLogSink(null);
+  });
+
+  it('an explicit development mode keeps it on in a production environment', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const options = resolveOptions({ mode: 'development' });
+
+    expect(options.enabled).toBe(true);
+    // The environment is still not local: the panel gate is decided by where
+    // the process actually runs, not by what it was asked to pretend.
+    expect(options.isLocalDevelopment).toBe(false);
   });
 });

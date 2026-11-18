@@ -1,0 +1,287 @@
+/* Per-route aggregates: which endpoint costs the most. */
+
+.routes {
+  display: grid;
+  grid-template-rows: 44px 1fr;
+  height: 100%;
+  overflow: hidden;
+}
+
+.routes-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--fg3);
+}
+
+.routes-body {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.routes-grid {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 104px 56px 62px 56px 62px 62px 62px 56px 60px 74px 100px;
+  gap: 10px;
+  align-items: center;
+  padding: 0 12px;
+}
+
+.routes-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 32px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line3);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg3);
+}
+
+.routes-row {
+  height: 38px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line2);
+  background: transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--t-fast) ease-out;
+}
+
+.routes-row:hover {
+  background: var(--bg3);
+}
+
+/* The costliest endpoints, marked the way severity is marked in the list. */
+.routes-row[data-tick="warn"] {
+  box-shadow: inset 2px 0 0 0 var(--warn);
+}
+
+.route-share {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.share-track {
+  width: 48px;
+  height: 6px;
+  flex: none;
+  background: var(--track);
+}
+
+/* Neutral by default: only the route that costs the most earns a colour,
+   because a bar that reddens with its own figure calls a quiet screen's
+   biggest share a problem. */
+.share-fill {
+  display: block;
+  height: 100%;
+  background: var(--fg4);
+}
+
+.share-fill[data-worst="true"] {
+  background: var(--err-bar);
+}
+
+/* The detectors that fired here — the reason to open this screen. */
+.route-findings {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  font-size: 9.5px;
+}
+
+/* Ten bars of the table's own window: steady, bursty, or long gone. */
+.trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+
+.trend-bar {
+  flex: 1;
+  min-height: 0;
+  background: var(--fg4);
+}
+
+/* A route with errors in the window: the shape is the same, the colour says
+   something failed inside it. */
+.trend[data-red="true"] .trend-bar {
+  background: var(--err-bar);
+}
+
+.routes-empty {
+  padding: 18px 14px;
+  font-size: 12px;
+}
+
+/* ── One route, opened ───────────────────────────────────────────────── */
+
+/* An opened route settles in rather than appearing.
+ *
+ * And it reserves its height while the history is being read: the panel used
+ * to arrive one line tall, then jump to its full size when the answer landed,
+ * which is the jerk — not the animation, the reflow under it. */
+.route-charts {
+  padding: 10px 14px 14px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+  min-height: 176px;
+  animation: charts-in var(--t-slow) var(--ease-glide);
+}
+
+@keyframes charts-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.route-charts-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 11px;
+}
+
+.charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+/* The peek anchors to the chart it belongs to. */
+.chart {
+  position: relative;
+}
+
+/* On a chart four lines tall the peek hangs below the plot instead of
+   covering all of it. */
+.chart .chart-peek {
+  top: calc(100% + 6px);
+}
+
+.charts-hint {
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+/* ── What ran here ───────────────────────────────────────────────────── */
+
+.what-ran {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.what-ran-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.outliers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.outlier {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.outlier:hover {
+  background: var(--bg3);
+}
+
+.outlier-ratio {
+  font-family: var(--mono);
+  color: var(--warn);
+}
+
+/* The legend carries the line colours, so the three are told apart without a
+   key nobody reads. */
+.key-p95 {
+  color: var(--acc);
+}
+
+.key-spread {
+  color: var(--acc);
+  opacity: 0.65;
+}
+
+/* Centred in the height the charts will take, so the panel does not resize
+   under the reader when the answer arrives. */
+.charts-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 150px;
+  font-size: 12px;
+}
+
+/* ── What the charts cannot say ──────────────────────────────────────── */
+
+.route-read {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line2);
+  font-size: 12px;
+}
+
+/* One sentence, and only when there is one worth writing: a flat route is a
+   constant in the code, a long tail is the story. Everything else is silence. */
+.route-reading {
+  margin-bottom: 8px;
+}
+
+.route-top-finding {
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--warn-line);
+  border-radius: 3px;
+}
+
+.route-finding-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.route-finding-hint {
+  margin-top: 6px;
+  font-size: 11.5px;
+}

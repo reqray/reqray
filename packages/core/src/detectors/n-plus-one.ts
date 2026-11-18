@@ -1,5 +1,5 @@
 /**
- * N+1 detector — Loupe's flagship finding.
+ * N+1 detector — Reqray's flagship finding.
  *
  * The governing principle here is not up for debate: **a false positive is
  * worse than a miss**. A tool that cries wolf gets switched off within a week.
@@ -79,12 +79,43 @@ function hintFor(source: string | null, fingerprint: string): string {
   }
 }
 
+const LIMIT = /\bLIMIT\b/i;
+
+/**
+ * Whether the run is one table being read a page at a time.
+ *
+ * `WHERE id > $1 ORDER BY id LIMIT 500` in a loop is the same SQL from the
+ * same line, one after another — everything an N+1 is, except that it is the
+ * fix rather than the problem: the alternative is one query for the whole
+ * table. What gives it away is the shape of the answers: every page full, the
+ * same size, until the last one. A lookup per parent row does not come back
+ * like that unless every parent has exactly as many children as the limit,
+ * and then "fetch them with one IN" would be the wrong advice anyway.
+ *
+ * A limit of one is left alone: that is `findFirst` in a loop, the most
+ * common N+1 there is.
+ */
+function isPaging(run: readonly DbSpan[], fingerprint: string): boolean {
+  if (!LIMIT.test(fingerprint)) return false;
+
+  const pageSize = run[0]?.rowCount ?? null;
+  if (pageSize === null || pageSize < 2) return false;
+
+  const last = run.length - 1;
+  for (let i = 0; i < last; i++) {
+    if (run[i]?.rowCount !== pageSize) return false;
+  }
+  const tail = run[last]?.rowCount ?? null;
+  return tail !== null && tail <= pageSize;
+}
+
 function evaluate(
   run: readonly DbSpan[],
   fingerprint: string,
   options: NPlusOneOptions,
 ): Finding | null {
   if (run.length < options.threshold) return null;
+  if (isPaging(run, fingerprint)) return null;
   if (overlapRatio(run) > options.maxOverlapRatio) return null;
 
   const callsite = singleCallsite(run);
@@ -123,7 +154,6 @@ function evaluate(
   };
 }
 
-/** The N+1 detector itself. */
 export const nPlusOne: Detector<NPlusOneOptions> = {
   id: 'n_plus_one',
 

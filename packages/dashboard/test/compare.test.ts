@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { RequestDetail, Span } from '../src/api';
-import { buildComparison, buildMetrics, buildVerdict } from '../src/compare';
+import type { RequestDetail, Span } from '../src/api/index';
+import { buildComparison, buildMetrics, buildVerdict } from '../src/features/compare/lib/compare';
 
 let spanId = 0;
 
@@ -41,7 +41,7 @@ function http(method: string, url: string, duration: number): Span {
 }
 
 function detailWith(spans: Span[]): RequestDetail {
-  return { spans } as RequestDetail;
+  return { spans } as unknown as RequestDetail;
 }
 
 describe('comparing two requests', () => {
@@ -126,7 +126,7 @@ function requestWith(over: Partial<RequestDetail>): RequestDetail {
     droppedSpans: 0,
     droppedLogs: 0,
     ...over,
-  } as RequestDetail;
+  } as unknown as RequestDetail;
 }
 
 const row = (rows: ReturnType<typeof buildMetrics>, label: string) =>
@@ -204,6 +204,10 @@ describe('the verdict', () => {
 
     expect(verdict).toContain('B is faster by 200 ms');
     expect(verdict).toContain('67%');
+    // And the same share read from the other side — it used to be 200%.
+    expect(buildVerdict(fast, requestWith({ durationMs: 300 }))).toContain(
+      'A is faster by 200 ms (67%)',
+    );
     expect(verdict).toContain('The N+1 is gone in B');
     expect(verdict).toContain('src/orders.js:26');
   });

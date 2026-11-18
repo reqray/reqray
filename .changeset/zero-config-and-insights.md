@@ -1,16 +1,16 @@
 ---
-'@loupe/core': minor
-'@loupe/register': minor
-'@loupe/instrumentation-pg': minor
-'@loupe/instrumentation-undici': minor
-'@loupe/dashboard': minor
-'@loupe/express': minor
-'@loupe/fastify': minor
+'@reqray/core': minor
+'@reqray/register': minor
+'@reqray/instrumentation-pg': minor
+'@reqray/instrumentation-undici': minor
+'@reqray/dashboard': minor
+'@reqray/express': minor
+'@reqray/fastify': minor
 ---
 
 Zero lines of code, a sequential-HTTP detector, and EXPLAIN from the dashboard.
 
-**Standalone mode.** `node --import @loupe/register app.js` — and the dashboard
+**Standalone mode.** `node --import @reqray/register app.js` — and the dashboard
 works without a single code change: incoming HTTP is intercepted through the
 built-in `diagnostics_channel`, and the dashboard comes up on a neighboring
 port (4310). Any adapter automatically turns the mode off. No request bodies
@@ -28,4 +28,4 @@ Along the way, outgoing HTTP spans gained the code line of the call — the
 record, `ANALYZE` is never used, parameterized queries go through
 `GENERIC_PLAN` (PostgreSQL 16+), and the plan runs on the same pool that
 executed the query. Outside local development it is enabled only explicitly:
-`loupe({ explain: true })`.
+`reqray({ explain: true })`.

@@ -8,6 +8,8 @@
  * (its values are almost always the varying part).
  */
 
+import { globalSlot, TwoGenerationCache } from './state.js';
+
 const NUMERIC = /^\d+$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HEX = /^[0-9a-f]{8,}$/i;
@@ -17,9 +19,20 @@ function normalizeSegment(segment: string): string {
   return segment;
 }
 
-/** Process-wide cache: the same URL string is fingerprinted once. */
-const cache = new Map<string, string>();
 const CACHE_LIMIT = 5_000;
+
+/**
+ * Process-wide cache: the same URL string is fingerprinted once.
+ *
+ * In the shared registry rather than in a module variable, for the same reason
+ * everything else is: this is read on every outgoing call, and a dual ESM/CJS
+ * load would otherwise give two caches with the same ceiling and half the hits
+ * each.
+ */
+const cache = globalSlot(
+  'http.fingerprints',
+  () => new TwoGenerationCache<string, string>(CACHE_LIMIT),
+);
 
 /**
  * Reduces an outgoing call to its shape: `GET api.example.com/users/:id/orders`.
@@ -28,7 +41,8 @@ const CACHE_LIMIT = 5_000;
  */
 export function fingerprintHttp(method: string, url: string): string {
   const key = `${method} ${url}`;
-  const cached = cache.get(key);
+  const fingerprints = cache();
+  const cached = fingerprints.get(key);
   if (cached) return cached;
 
   let fingerprint: string;
@@ -40,12 +54,11 @@ export function fingerprintHttp(method: string, url: string): string {
     fingerprint = `${method.toUpperCase()} ${url}`;
   }
 
-  if (cache.size >= CACHE_LIMIT) cache.clear();
-  cache.set(key, fingerprint);
+  fingerprints.set(key, fingerprint);
   return fingerprint;
 }
 
 /** Clears the fingerprint cache. Needed by tests. */
 export function clearHttpFingerprints(): void {
-  cache.clear();
+  cache().clear();
 }

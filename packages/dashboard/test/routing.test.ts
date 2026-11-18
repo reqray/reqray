@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hashFor, parseHash } from '../src/routing';
+import { hashFor, parseHash } from '../src/app/routing';
 
 describe('hash routing', () => {
   it('reads the current scheme', () => {

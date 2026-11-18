@@ -12,8 +12,8 @@
 
 import type { RecordedRequest } from '../types.js';
 
-/** Loupe's own additions to a HAR entry, under the extension prefix HAR reserves. */
-interface LoupeHarExtension {
+/** Reqray's own additions to a HAR entry, under the extension prefix HAR reserves. */
+interface ReqrayHarExtension {
   readonly sqlQueries: number;
   readonly nPlusOne: boolean;
   readonly test: string | null;
@@ -30,14 +30,15 @@ function headerList(headers: Readonly<Record<string, string>>): Array<{
 export function toHar(
   requests: readonly RecordedRequest[],
   now = new Date(0),
+  note: string | null = null,
 ): Record<string, unknown> {
   return {
     log: {
       version: '1.2',
-      creator: { name: 'loupe', version: '0.1' },
+      creator: { name: 'reqray', version: '0.1' },
       pages: [],
       entries: requests.map((request) => {
-        const extension: LoupeHarExtension = {
+        const extension: ReqrayHarExtension = {
           sqlQueries: request.spans.filter((span) => span.kind === 'db').length,
           nPlusOne: request.findings.some((finding) => finding.detector === 'n_plus_one'),
           test: request.test,
@@ -80,14 +81,18 @@ export function toHar(
             bodySize: request.responseBody?.text.length ?? 0,
           },
           cache: {},
-          // Everything Loupe knows lands in `wait`: the breakdown it has is by
+          // Everything Reqray knows lands in `wait`: the breakdown it has is by
           // span, not by the connection phases HAR describes.
           timings: { send: 0, wait: request.durationMs, receive: 0 },
-          _loupe: extension,
+          _reqray: extension,
         };
       }),
       // Kept out of the entries so a diff of two exports stays readable.
       _exportedAt: now.toISOString(),
+      // HAR's own field for this, so a viewer that knows nothing of Reqray
+      // still shows it. An export that was cut has to say so: it is evidence,
+      // and evidence presented as complete is worse than none.
+      ...(note ? { comment: note } : {}),
     },
   };
 }
@@ -104,11 +109,18 @@ function shellQuote(value: string): string {
  * masking. A script that leaked the authorization header of every recorded
  * request would undo the one guarantee the buffer makes.
  */
-export function toCurlScript(requests: readonly RecordedRequest[], origin: string): string {
+export function toCurlScript(
+  requests: readonly RecordedRequest[],
+  origin: string,
+  note: string | null = null,
+): string {
   const lines = [
     '#!/bin/sh',
-    '# Exported from loupe. Sensitive headers and fields are masked, so a',
+    '# Exported from reqray. Sensitive headers and fields are masked, so a',
     '# request that needed them will not authenticate as it did.',
+    // At the top rather than the bottom: a script is read from the first line,
+    // and "this is not all of them" belongs where reading starts.
+    ...(note ? [`# ${note}`] : []),
     '',
   ];
 
@@ -123,7 +135,9 @@ export function toCurlScript(requests: readonly RecordedRequest[], origin: strin
     if (request.requestBody) parts.push(`  --data ${shellQuote(request.requestBody.text)}`);
 
     lines.push(
-      `# ${request.status} · ${Math.round(request.durationMs)} ms${request.test ? ` · ${request.test}` : ''}`,
+      // One line, whatever the name holds: a record can come off the wire, and
+      // a line break here would end the comment and start a command.
+      `# ${request.status} · ${Math.round(request.durationMs)} ms${request.test ? ` · ${request.test.replace(/\p{Cc}/gu, ' ')}` : ''}`,
       parts.join(' \\\n'),
       '',
     );

@@ -6,11 +6,11 @@
  * whole screen.
  */
 
-import { duplicateCache, duplicateHttp } from '@loupe/core';
+import { duplicateCache, duplicateHttp } from '@reqray/core';
 import { describe, expect, it } from 'vitest';
 import { scenario } from '../fixtures/spans.js';
 
-const FACTS = { durationMs: 200, status: 200 };
+const FACTS = { durationMs: 200, status: 200, bytesOut: null, contentType: null };
 const CHARGES = 'https://api.stripe.com/v1/charges?customer=cus_QxT1';
 
 const runHttp = (scope: Parameters<typeof duplicateHttp.run>[0]) =>
@@ -165,5 +165,51 @@ describe('duplicate cache reads', () => {
 
   it('a request without cache spans yields nothing', () => {
     expect(runCache(scenario().call({ url: CHARGES }).done())).toHaveLength(0);
+  });
+
+  it('points at the first read and names where else it happened', () => {
+    const scope = scenario()
+      .cache({ key: KEY, callsite: 'src/checkout.ts:14' })
+      .cache({ key: KEY, callsite: 'src/pricing.ts:31' })
+      .done();
+
+    const [finding] = runCache(scope);
+
+    expect(finding?.callsite?.relative).toBe('src/checkout.ts');
+    expect(finding?.hint).toContain('src/pricing.ts:31');
+  });
+
+  it('names the whole call when a driver reported one', () => {
+    const scope = scenario()
+      .cache({ command: 'HGET', key: 'user:1 email', callsite: 'src/profile.ts:9' })
+      .cache({ command: 'HGET', key: 'user:1 email', callsite: 'src/billing.ts:22' })
+      .done();
+
+    const [finding] = runCache(scope);
+
+    expect(finding?.evidence).toMatchObject({
+      kind: 'duplicate',
+      fingerprint: 'HGET user:1 email',
+    });
+  });
+
+  it('two fields of one hash are two reads, not a duplicate', () => {
+    // The key is the same and the values are different: calling this a
+    // duplicate would be the false positive that gets a tool switched off.
+    const scope = scenario()
+      .cache({ command: 'HGET', key: 'user:1 email' })
+      .cache({ command: 'HGET', key: 'user:1 plan' })
+      .done();
+
+    expect(runCache(scope)).toHaveLength(0);
+  });
+
+  it('a read that also removes what it read is not a repeated read', () => {
+    const scope = scenario()
+      .cache({ command: 'LPOP', operation: 'other', key: 'jobs' })
+      .cache({ command: 'LPOP', operation: 'other', key: 'jobs' })
+      .done();
+
+    expect(runCache(scope)).toHaveLength(0);
   });
 });

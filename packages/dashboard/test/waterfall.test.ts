@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { RequestDetail, Span } from '../src/api';
-import { buildWaterfall, uninstrumentedMs } from '../src/waterfall';
+import type { RequestDetail, Span } from '../src/api/index';
+import { buildWaterfall, parallelSpans, uninstrumentedMs } from '../src/shared/waterfall/model';
 
 let id = 0;
 
@@ -87,5 +87,35 @@ describe('uninstrumented time', () => {
 
   it('a fast request without spans draws nothing', () => {
     expect(gaps(detailWith(3, [span('handler', 0, 3)]))).toHaveLength(0);
+  });
+});
+
+describe('children that ran together', () => {
+  /** Same builder, with a parent this time. */
+  function child(parentId: number, startedAt: number, duration: number): Span {
+    return { ...span('db', startedAt, duration), parentId } as Span;
+  }
+
+  it('marks a span whose children overlapped', () => {
+    const parent = span('handler', 0, 100);
+    // Promise.all: three queries fired at once.
+    const spans = [parent, child(parent.id, 10, 40), child(parent.id, 12, 40)];
+
+    expect(parallelSpans(spans).has(parent.id)).toBe(true);
+  });
+
+  it('does not mark a loop', () => {
+    const parent = span('handler', 0, 100);
+    // One ending exactly where the next begins is the N+1 shape, and calling
+    // it concurrency here would contradict the detector.
+    const spans = [parent, child(parent.id, 10, 10), child(parent.id, 20, 10)];
+
+    expect(parallelSpans(spans).has(parent.id)).toBe(false);
+  });
+
+  it('says nothing about a span with one child, or none', () => {
+    const parent = span('handler', 0, 100);
+    expect(parallelSpans([parent]).size).toBe(0);
+    expect(parallelSpans([parent, child(parent.id, 0, 100)]).size).toBe(0);
   });
 });

@@ -33,17 +33,25 @@
     // Packages resolve to sources so typecheck and tests need no prior build.
     // The same list is duplicated in vitest.config.ts — update both.
     "paths": {
-      "@loupe/core": ["./packages/core/src/index.ts"],
-      "@loupe/register": ["./packages/register/src/index.ts"],
-      "@loupe/express": ["./packages/express/src/index.ts"],
-      "@loupe/fastify": ["./packages/fastify/src/index.ts"],
-      "@loupe/transport-memory": ["./packages/transport-memory/src/index.ts"],
-      "@loupe/transport-http": ["./packages/transport-http/src/index.ts"],
-      "@loupe/server": ["./packages/server/src/index.ts"],
-      "@loupe/nestjs": ["./packages/nestjs/src/index.ts"],
-      "@loupe/instrumentation-pg": ["./packages/instrumentation-pg/src/index.ts"],
-      "@loupe/instrumentation-prisma": ["./packages/instrumentation-prisma/src/index.ts"],
-      "@loupe/instrumentation-undici": ["./packages/instrumentation-undici/src/index.ts"]
+      "@reqray/core": ["./packages/core/src/index.ts"],
+      "@reqray/core/panel": ["./packages/core/src/panel/index.ts"],
+      "@reqray/core/testing": ["./packages/core/src/testing.ts"],
+      "@reqray/protocol": ["./packages/protocol/src/index.ts"],
+      "@reqray/waterfall": ["./packages/waterfall/src/index.ts"],
+      "@reqray/cli": ["./packages/cli/src/index.ts"],
+      "@reqray/register": ["./packages/register/src/index.ts"],
+      "@reqray/express": ["./packages/express/src/index.ts"],
+      "@reqray/fastify": ["./packages/fastify/src/index.ts"],
+      "@reqray/store-memory": ["./packages/store-memory/src/index.ts"],
+      "@reqray/store-sqlite": ["./packages/store-sqlite/src/index.ts"],
+      "@reqray/transport-file": ["./packages/transport-file/src/index.ts"],
+      "@reqray/transport-http": ["./packages/transport-http/src/index.ts"],
+      "@reqray/server": ["./packages/server/src/index.ts"],
+      "@reqray/nestjs": ["./packages/nestjs/src/index.ts"],
+      "@reqray/instrumentation-ioredis": ["./packages/instrumentation-ioredis/src/index.ts"],
+      "@reqray/instrumentation-pg": ["./packages/instrumentation-pg/src/index.ts"],
+      "@reqray/instrumentation-prisma": ["./packages/instrumentation-prisma/src/index.ts"],
+      "@reqray/instrumentation-undici": ["./packages/instrumentation-undici/src/index.ts"]
     }
   }
 }

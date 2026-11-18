@@ -8,9 +8,9 @@
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { connect } from 'node:net';
-import { current, fingerprintSql, record } from '@loupe/core';
-import { loupe } from '@loupe/express';
-import { type MemoryStore, memoryTransport } from '@loupe/transport-memory';
+import { current, fingerprintSql, record } from '@reqray/core';
+import { reqray } from '@reqray/express';
+import { type MemoryStore, memoryTransport } from '@reqray/store-memory';
 import express, { type Express } from 'express';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -62,10 +62,10 @@ interface Harness {
   readonly store: MemoryStore;
 }
 
-function harness(options: Parameters<typeof loupe>[0] = {}): Harness {
+function harness(options: Parameters<typeof reqray>[0] = {}): Harness {
   const store = memoryTransport();
   const app = express();
-  const inspector = loupe({ mode: 'development', transport: store, ...options });
+  const inspector = reqray({ mode: 'development', transport: store, ...options });
 
   app.use(express.json());
   app.use(inspector.middleware);
@@ -104,7 +104,7 @@ describe('panel API', () => {
     await fetch(`${base}/orders?limit=10`);
     await waitFor(store, 1);
 
-    const response = await fetch(`${base}/_loupe/api/requests`);
+    const response = await fetch(`${base}/_reqray/api/requests`);
     const payload = (await response.json()) as {
       requests: Array<Record<string, unknown>>;
       summary: Record<string, number>;
@@ -129,7 +129,7 @@ describe('panel API', () => {
 
     await fetch(`${base}/orders`);
     await waitFor(store, 1);
-    await fetch(`${base}/_loupe/api/requests`);
+    await fetch(`${base}/_reqray/api/requests`);
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(store.list()).toHaveLength(1);
@@ -143,9 +143,9 @@ describe('panel API', () => {
     await fetch(`${base}/boom`);
     await waitFor(store, 2);
 
-    const byPath = await fetch(`${base}/_loupe/api/requests?q=boom`).then((r) => r.json());
-    const byStatus = await fetch(`${base}/_loupe/api/requests?status=5`).then((r) => r.json());
-    const byMethod = await fetch(`${base}/_loupe/api/requests?method=POST`).then((r) => r.json());
+    const byPath = await fetch(`${base}/_reqray/api/requests?q=boom`).then((r) => r.json());
+    const byStatus = await fetch(`${base}/_reqray/api/requests?status=5`).then((r) => r.json());
+    const byMethod = await fetch(`${base}/_reqray/api/requests?method=POST`).then((r) => r.json());
 
     expect((byPath as { requests: unknown[] }).requests).toHaveLength(1);
     expect((byStatus as { requests: unknown[] }).requests).toHaveLength(1);
@@ -160,7 +160,7 @@ describe('panel API', () => {
     await waitFor(store, 1);
 
     const id = store.list()[0]?.id;
-    const detail = (await fetch(`${base}/_loupe/api/requests/${id}`).then((r) => r.json())) as {
+    const detail = (await fetch(`${base}/_reqray/api/requests/${id}`).then((r) => r.json())) as {
       spans: unknown[];
       findings: Array<{ detector: string }>;
     };
@@ -178,7 +178,7 @@ describe('panel API', () => {
     const record = store.list()[0];
     const spanId = record?.spans.find((span) => span.kind === 'db')?.id;
 
-    const response = await fetch(`${base}/_loupe/api/explain`, {
+    const response = await fetch(`${base}/_reqray/api/explain`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: record?.id, spanId }),
@@ -196,7 +196,7 @@ describe('panel API', () => {
     await fetch(`${base}/orders`);
     await waitFor(store, 1);
 
-    const response = await fetch(`${base}/_loupe/api/explain`, {
+    const response = await fetch(`${base}/_reqray/api/explain`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: store.list()[0]?.id, spanId: 1 }),
@@ -209,7 +209,7 @@ describe('panel API', () => {
     const { app } = harness();
     const base = await serve(app);
 
-    const response = await fetch(`${base}/_loupe/api/requests/no-such-id`);
+    const response = await fetch(`${base}/_reqray/api/requests/no-such-id`);
 
     expect(response.status).toBe(404);
   });
@@ -222,7 +222,7 @@ describe('panel API', () => {
     await waitFor(store, 1);
     const id = store.list()[0]?.id;
 
-    const pin = await fetch(`${base}/_loupe/api/pin`, {
+    const pin = await fetch(`${base}/_reqray/api/pin`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id, pinned: true }),
@@ -231,7 +231,7 @@ describe('panel API', () => {
     expect(pin.status).toBe(200);
     expect(await pin.json()).toMatchObject({ id, pinned: true });
 
-    const list = (await (await fetch(`${base}/_loupe/api/requests`)).json()) as {
+    const list = (await (await fetch(`${base}/_reqray/api/requests`)).json()) as {
       requests: Array<{ id: string; pinned: boolean }>;
     };
     expect(list.requests[0]).toMatchObject({ id, pinned: true });
@@ -241,7 +241,7 @@ describe('panel API', () => {
     const { app } = harness();
     const base = await serve(app);
 
-    const response = await fetch(`${base}/_loupe/api/pin`, {
+    const response = await fetch(`${base}/_reqray/api/pin`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: 'no-such-id', pinned: true }),
@@ -258,7 +258,7 @@ describe('panel API', () => {
     await fetch(`${base}/orders`);
     await waitFor(store, 1);
 
-    await fetch(`${base}/_loupe/api/requests`, { method: 'DELETE' });
+    await fetch(`${base}/_reqray/api/requests`, { method: 'DELETE' });
 
     expect(store.list()).toEqual([]);
   });
@@ -271,7 +271,7 @@ describe('panel API', () => {
     await fetch(`${base}/boom`);
     await waitFor(store, 2);
 
-    const payload = (await fetch(`${base}/_loupe/api/exceptions`).then((r) => r.json())) as {
+    const payload = (await fetch(`${base}/_reqray/api/exceptions`).then((r) => r.json())) as {
       groups: Array<{ type: string; count: number; frames: unknown[]; buckets: number[] }>;
     };
 
@@ -285,7 +285,7 @@ describe('panel API', () => {
     const base = await serve(app);
 
     const controller = new AbortController();
-    const stream = await fetch(`${base}/_loupe/api/stream`, { signal: controller.signal });
+    const stream = await fetch(`${base}/_reqray/api/stream`, { signal: controller.signal });
     expect(stream.headers.get('content-type')).toContain('text/event-stream');
 
     const reader = stream.body?.getReader();
@@ -309,7 +309,7 @@ describe('panel API', () => {
     const { app } = harness();
     const base = await serve(app);
 
-    expect((await fetch(`${base}/_loupe/api/no-such-thing`)).status).toBe(404);
+    expect((await fetch(`${base}/_reqray/api/no-such-thing`)).status).toBe(404);
   });
 
   it('mounts at a custom path', async () => {
@@ -317,19 +317,19 @@ describe('panel API', () => {
     const base = await serve(app);
 
     expect((await fetch(`${base}/__debug/api/requests`)).status).toBe(200);
-    expect((await fetch(`${base}/_loupe/api/requests`)).status).toBe(404);
+    expect((await fetch(`${base}/_reqray/api/requests`)).status).toBe(404);
   });
 
   it('does not let anyone past the gate', async () => {
     // HTTP header values are limited to Latin-1, hence the ASCII token.
     const { app } = harness({
-      panel: { gate: (ctx) => ctx.headers['x-loupe-token'] === 'let-me-in' },
+      panel: { gate: (ctx) => ctx.headers['x-reqray-token'] === 'let-me-in' },
     });
     const base = await serve(app);
 
-    expect((await fetch(`${base}/_loupe/api/requests`)).status).toBe(403);
+    expect((await fetch(`${base}/_reqray/api/requests`)).status).toBe(403);
     expect(
-      (await fetch(`${base}/_loupe/api/requests`, { headers: { 'x-loupe-token': 'let-me-in' } }))
+      (await fetch(`${base}/_reqray/api/requests`, { headers: { 'x-reqray-token': 'let-me-in' } }))
         .status,
     ).toBe(200);
   });
@@ -344,7 +344,7 @@ describe('request replay', () => {
     await waitFor(store, 1);
     const original = store.list()[0];
 
-    const comparison = (await fetch(`${base}/_loupe/api/replay`, {
+    const comparison = (await fetch(`${base}/_reqray/api/replay`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: original?.id, method: 'GET', path: '/n-plus-one', headers: {} }),
@@ -369,7 +369,7 @@ describe('request replay', () => {
     await waitFor(store, 1);
     const original = store.list()[0];
 
-    await fetch(`${base}/_loupe/api/replay`, {
+    await fetch(`${base}/_reqray/api/replay`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: original?.id, method: 'GET', path: '/orders', headers: {} }),
@@ -390,7 +390,7 @@ describe('request replay', () => {
     });
     await waitFor(store, 1);
 
-    const comparison = (await fetch(`${base}/_loupe/api/replay`, {
+    const comparison = (await fetch(`${base}/_reqray/api/replay`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -413,7 +413,7 @@ describe('request replay', () => {
     await fetch(`${base}/orders`);
     await waitFor(store, 1);
 
-    const response = await fetch(`${base}/_loupe/api/replay`, {
+    const response = await fetch(`${base}/_reqray/api/replay`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: store.list()[0]?.id }),
@@ -430,7 +430,7 @@ describe('panel static serving', () => {
     const { app } = harness();
     const base = await serve(app);
 
-    const response = await fetch(`${base}/_loupe/`);
+    const response = await fetch(`${base}/_reqray/`);
     const html = await response.text();
 
     expect(response.status).toBe(200);
@@ -442,11 +442,11 @@ describe('panel static serving', () => {
     const { app } = harness();
     const base = await serve(app);
 
-    const html = await fetch(`${base}/_loupe/`).then((r) => r.text());
+    const html = await fetch(`${base}/_reqray/`).then((r) => r.text());
     const asset = /assets\/(index-[\w-]+\.js)/.exec(html)?.[1];
     expect(asset).toBeDefined();
 
-    const response = await fetch(`${base}/_loupe/assets/${asset}`);
+    const response = await fetch(`${base}/_reqray/assets/${asset}`);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('javascript');
   });
@@ -455,7 +455,7 @@ describe('panel static serving', () => {
     const { app } = harness();
     const base = await serve(app);
 
-    const response = await fetch(`${base}/_loupe/exceptions`);
+    const response = await fetch(`${base}/_reqray/exceptions`);
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain('<div id="root">');
@@ -471,7 +471,7 @@ describe('panel static serving', () => {
     const raw = await new Promise<string>((resolve, reject) => {
       const socket = connect(port, '127.0.0.1', () => {
         socket.write(
-          'GET /_loupe/../../package.json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n',
+          'GET /_reqray/../../package.json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n',
         );
       });
       let received = '';
@@ -482,7 +482,7 @@ describe('panel static serving', () => {
       socket.on('error', reject);
     });
 
-    expect(raw).not.toContain('"@loupe/example');
+    expect(raw).not.toContain('"@reqray/example');
     expect(raw).not.toContain('"devDependencies"');
   });
 

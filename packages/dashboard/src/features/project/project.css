@@ -1,0 +1,181 @@
+/* What Reqray knows about the application it is watching. Cards rather than a
+   table: these are facts of different shapes, not rows of one kind. */
+
+.project {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 14px;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+/* Two columns where the content allows it, one when the panel is narrow. */
+.project-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 14px;
+}
+
+.panel-card {
+  padding: 12px 14px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+}
+
+.panel-card > .label {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.fact {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--line2);
+}
+
+.fact:first-of-type {
+  border-top: 0;
+}
+
+.fact-label {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--fg3);
+}
+
+.fact-value {
+  font-size: 13px;
+  /* Paths and long field lists wrap rather than push the card wider. */
+  word-break: break-word;
+}
+
+.feature {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-right: 12px;
+  white-space: nowrap;
+}
+
+/* The startup report, which used to live only in the terminal. */
+.instr-row {
+  display: grid;
+  grid-template-columns: 16px minmax(160px, auto) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--line2);
+  font-size: 13px;
+}
+
+.instr-row:first-child {
+  border-top: 0;
+}
+
+/* The hint sits under the line it belongs to, indented past the mark. */
+.instr-hint {
+  grid-column: 2 / -1;
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.detector-row {
+  display: grid;
+  grid-template-columns: 16px 168px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--line2);
+  font-size: 13px;
+}
+
+.detector-row:first-child {
+  border-top: 0;
+}
+
+/*
+ * Retention: the one card here that changes something rather than reporting
+ * it, so the control is a control — a field and a button, not a fact.
+ */
+.retention-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 0 8px;
+}
+
+.retention-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.retention-input {
+  width: 72px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg2);
+  color: var(--fg);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+  text-align: right;
+}
+
+.retention-input:focus {
+  outline: none;
+  border-color: var(--acc);
+}
+
+.retention-input:disabled {
+  color: var(--fg3);
+  background: transparent;
+}
+
+.retention-note {
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+
+.retention-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line2);
+  font-size: 13px;
+}
+
+/* A path is long and nobody reads it twice; it wraps rather than pushing the
+   card wider than its column. */
+.retention-path {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* Asking the pools again.
+ *
+ * Plain text rather than a button: pressing it changes nothing, it only takes
+ * a fresh reading, and anything shaped like a button on this screen has so
+ * far meant a setting being written. */
+.link-button {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg3);
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--fg);
+}

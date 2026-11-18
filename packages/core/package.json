@@ -1,8 +1,27 @@
 {
-  "name": "@loupe/core",
+  "name": "@reqray/core",
   "version": "0.0.0",
-  "description": "Loupe core: request context, buffer, sampling, masking, detectors. Zero runtime dependencies.",
+  "description": "Reqray core: request context, buffer, sampling, masking, detectors. No third-party runtime dependencies.",
   "license": "MIT",
+  "keywords": [
+    "nodejs",
+    "debugging",
+    "profiling",
+    "n+1",
+    "sql",
+    "observability",
+    "devtools",
+    "fastify",
+    "express",
+    "nestjs"
+  ],
+  "homepage": "https://github.com/reqray/reqray#readme",
+  "bugs": "https://github.com/reqray/reqray/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reqray/reqray.git",
+    "directory": "packages/core"
+  },
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -16,6 +35,26 @@
       "require": {
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
+      }
+    },
+    "./panel": {
+      "import": {
+        "types": "./dist/panel/index.d.ts",
+        "default": "./dist/panel/index.js"
+      },
+      "require": {
+        "types": "./dist/panel/index.d.cts",
+        "default": "./dist/panel/index.cjs"
+      }
+    },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing.d.ts",
+        "default": "./dist/testing.js"
+      },
+      "require": {
+        "types": "./dist/testing.d.cts",
+        "default": "./dist/testing.cjs"
       }
     }
   },
@@ -31,6 +70,9 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@reqray/protocol": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "catalog:",

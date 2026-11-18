@@ -1,8 +1,9 @@
-import { normalizeRoute, percentile, type RecordedRequest, routeStats } from '@loupe/core';
+import { type RecordedRequest, timingOf, weightOf } from '@reqray/core';
+import { normalizeRoute, percentile, routeStats } from '@reqray/core/panel';
 import { describe, expect, it } from 'vitest';
 
 function request(overrides: Partial<RecordedRequest> = {}): RecordedRequest {
-  return {
+  const base = {
     id: `r${Math.random()}`,
     method: 'GET',
     path: '/api/orders',
@@ -22,6 +23,13 @@ function request(overrides: Partial<RecordedRequest> = {}): RecordedRequest {
     droppedLogs: 0,
     test: null,
     ...overrides,
+  };
+  return {
+    ...base,
+    timing: timingOf(base.spans, base.durationMs),
+    host: base.host ?? null,
+    weight: weightOf(base),
+    cost: null,
   };
 }
 
@@ -140,6 +148,115 @@ describe('route aggregates', () => {
   });
 
   it('an empty buffer has nothing to report', () => {
-    expect(routeStats([])).toEqual({ routes: [], samples: 0, windowMs: 0 });
+    expect(routeStats([])).toEqual({ routes: [], samples: 0, windowMs: 0, from: 0, to: 0 });
+  });
+});
+
+describe('what a route moves', () => {
+  it('averages the bytes over the calls that reported any', () => {
+    const [route] = routeStats([
+      request({ responseHeaders: { 'content-length': '1000' } }),
+      request({ responseHeaders: { 'content-length': '3000' } }),
+      // A 204, a stream, a framework that did not set the header: this call
+      // says nothing about its size, and counting it as zero would rank the
+      // endpoint below one that returns a status code.
+      request({ responseHeaders: {} }),
+    ]).routes;
+
+    expect(route?.bytesAvg).toBe(2_000);
+    expect(route?.calls).toBe(3);
+  });
+
+  it('says nothing when no call reported a size', () => {
+    const [route] = routeStats([request(), request()]).routes;
+    expect(route?.bytesAvg).toBeNull();
+  });
+});
+
+describe('what the detectors found here', () => {
+  const finding = (detector: string, costMs: number, over: Record<string, unknown> = {}) =>
+    ({
+      detector,
+      severity: 'warn',
+      title: `${detector} fired`,
+      costMs,
+      callsite: { file: '/srv/app/src/shop.js', relative: 'src/shop.js', line: 7, column: 1 },
+      evidence: {
+        kind: 'budget',
+        durationMs: 10,
+        budgetMs: 1,
+        externalMs: 0,
+        sqlMs: 0,
+        spanIds: [],
+      },
+      hint: 'fix it',
+      ...over,
+    }) as unknown as RecordedRequest['findings'][number];
+
+  it('rolls the detectors up per route, costliest first', () => {
+    const report = routeStats([
+      request({ findings: [finding('n_plus_one', 30), finding('dup_cache', 1)] }),
+      request({ findings: [finding('n_plus_one', 20)] }),
+      request({ path: '/api/quiet', findings: [] }),
+    ]);
+
+    const orders = report.routes.find((row) => row.route === '/api/orders');
+    expect(orders?.findings.map((found) => found.detector)).toEqual(['n_plus_one', 'dup_cache']);
+    expect(orders?.findings[0]).toMatchObject({ calls: 2, recoverableMs: 50 });
+    expect(report.routes.find((row) => row.route === '/api/quiet')?.findings).toEqual([]);
+  });
+
+  it('speaks with the freshest occurrence — a count must not be stale', () => {
+    const report = routeStats([
+      request({ startedAt: 1_000, findings: [finding('n_plus_one', 5, { title: '150 queries' })] }),
+      request({ startedAt: 9_000, findings: [finding('n_plus_one', 5, { title: '12 queries' })] }),
+    ]);
+
+    expect(report.routes[0]?.findings[0]?.title).toBe('12 queries');
+  });
+
+  it('leaves a muted pattern out — the column is a shout', () => {
+    const requests = [request({ findings: [finding('n_plus_one', 30), finding('dup_cache', 1)] })];
+    const muted = new Set(['n_plus_one@src/shop.js:7']);
+
+    expect(routeStats(requests)['routes'][0]?.findings.map((found) => found.detector)).toEqual([
+      'n_plus_one',
+      'dup_cache',
+    ]);
+    expect(
+      routeStats(requests, muted)['routes'][0]?.findings.map((found) => found.detector),
+    ).toEqual(['dup_cache']);
+  });
+});
+
+describe('the shape of the traffic', () => {
+  it('cuts every route into the same ten columns of the same window', () => {
+    // Two routes over one ten-second window: one called at the start, one at
+    // the end. Comparable by eye is the whole point of a shared window.
+    const report = routeStats([
+      request({ path: '/api/early', startedAt: 1_000 }),
+      request({ path: '/api/early', startedAt: 1_500 }),
+      request({ path: '/api/late', startedAt: 11_000 }),
+    ]);
+
+    const early = report.routes.find((row) => row.route === '/api/early');
+    const late = report.routes.find((row) => row.route === '/api/late');
+
+    expect(early?.trend).toHaveLength(10);
+    expect(early?.trend[0]).toBe(2);
+    expect(early?.trend.at(-1)).toBe(0);
+    expect(late?.trend[0]).toBe(0);
+    expect(late?.trend.at(-1)).toBe(1);
+    // Every bar adds up to the calls it stands for.
+    for (const row of report.routes) {
+      expect(row.trend.reduce((sum, value) => sum + value, 0)).toBe(row.calls);
+    }
+  });
+
+  it('a single call still draws a shape rather than dividing by nothing', () => {
+    const report = routeStats([request()]);
+
+    expect(report.routes[0]?.trend).toHaveLength(10);
+    expect(report.routes[0]?.trend.reduce((sum, value) => sum + value, 0)).toBe(1);
   });
 });

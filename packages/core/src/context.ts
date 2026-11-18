@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 /**
  * Current request context.
  *
@@ -10,7 +11,22 @@
  */
 
 import type { RequestScope } from './scope.js';
-import { loupeState } from './state.js';
+import { globalSlot } from './state.js';
+import type { Callsite } from './types.js';
+
+/** The request context. One per process — see `state.ts` for why. */
+const storage = globalSlot('context.storage', () => new AsyncLocalStorage<RequestScope>());
+
+/**
+ * Callsite handed from a pool wrapper down to the driver wrapper.
+ *
+ * Absent outside a pooled query — that is what tells the driver wrapper to
+ * capture a stack of its own.
+ */
+export const pendingCallsite = globalSlot(
+  'context.pendingCallsite',
+  () => new AsyncLocalStorage<{ readonly callsite: Callsite | null; readonly clientId?: number }>(),
+);
 
 /**
  * Scope of the current request, or `undefined`.
@@ -19,12 +35,12 @@ import { loupeState } from './state.js';
  * return, not a single allocation made.
  */
 export function current(): RequestScope | undefined {
-  return loupeState().storage.getStore();
+  return storage().getStore();
 }
 
 /** Runs `fn` inside the scope. Return values and exceptions pass through as is. */
 export function runInScope<T>(scope: RequestScope, fn: () => T): T {
-  return loupeState().storage.run(scope, fn);
+  return storage().run(scope, fn);
 }
 
 /**
@@ -34,15 +50,15 @@ export function runInScope<T>(scope: RequestScope, fn: () => T): T {
  * (Fastify's `onRequest`) and handling cannot be wrapped in a single call.
  */
 export function enterScope(scope: RequestScope): void {
-  loupeState().storage.enterWith(scope);
+  storage().enterWith(scope);
 }
 
 /**
  * Runs `fn` outside of any scope.
  *
- * Needed for Loupe's own background work: writing to storage must not end up
+ * Needed for Reqray's own background work: writing to storage must not end up
  * as spans of the request being handled.
  */
 export function runOutsideScope<T>(fn: () => T): T {
-  return loupeState().storage.exit(fn);
+  return storage().exit(fn);
 }

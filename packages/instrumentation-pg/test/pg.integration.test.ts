@@ -18,14 +18,17 @@ import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import {
   type DbSpan,
+  poolWait,
   type RecordedRequest,
   RequestScope,
   resolveOptions,
   runDetectors,
-  runExplain,
   runInScope,
-} from '@loupe/core';
-import { instrumentPg } from '@loupe/instrumentation-pg';
+  timingOf,
+  transactionsOf,
+} from '@reqray/core';
+import { runExplain } from '@reqray/core/panel';
+import { instrumentPg } from '@reqray/instrumentation-pg';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -54,7 +57,7 @@ async function freePort(): Promise<number> {
 const hasDocker = dockerAvailable();
 if (!hasDocker) {
   console.warn(
-    'loupe: stock Postgres suite skipped — Docker is unavailable. The same suite runs on PGlite.',
+    'reqray: stock Postgres suite skipped — Docker is unavailable. The same suite runs on PGlite.',
   );
 }
 
@@ -206,6 +209,93 @@ function suite(name: string, backend: Backend, enabled: boolean): void {
       expect(dbSpans(scope)[0]?.callsite?.relative).toContain('pg.integration.test.ts');
     });
 
+    it('measures the queue when the pool has nothing free to give', async () => {
+      // A pool of one, with its only connection deliberately held: the second
+      // query cannot start until the first hand lets go, and the whole point
+      // of the stage is that this looks nothing like a slow query.
+      const scope = new RequestScope({ id: 'w1', method: 'GET', path: '/orders', options });
+
+      await runInScope(scope, async () => {
+        const held = await pool.connect();
+        const queued = pool.query('SELECT 1 AS one');
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        held.release();
+        await queued;
+      });
+
+      const [span] = dbSpans(scope);
+      expect(span?.waitMs ?? 0).toBeGreaterThan(100);
+      // The query itself is trivial. That gap is the finding.
+      expect(span?.duration).toBeLessThan(span?.waitMs ?? 0);
+      // And it still knows where it came from: a queued acquire is dispatched
+      // by whoever released the connection, in a context that never saw this
+      // request, so the callsite has to be carried across by hand.
+      expect(span?.callsite?.relative).toContain('pg.integration.test.ts');
+
+      const findings = poolWait.run(scope, poolWait.defaultOptions, {
+        durationMs: 200,
+        status: 200,
+        bytesOut: null,
+        contentType: null,
+      });
+      expect(findings[0]?.detector).toBe('pool_wait');
+      expect(findings[0]?.callsite?.relative).toContain('pg.integration.test.ts');
+    });
+
+    it('files every queued query under the request that issued it', async () => {
+      // The bug this locks down, which cost four spans out of five: a query
+      // that has to wait for a connection is dispatched by whoever releases
+      // one — from the driver's socket, or from a request that has already
+      // finished — and `current()` there is a stale scope or none at all. The
+      // queries ran, the application was none the wiser, and the panel showed
+      // one query where there had been five.
+      const scope = new RequestScope({ id: 'q1', method: 'GET', path: '/orders', options });
+
+      await runInScope(scope, () =>
+        Promise.all(
+          [1, 2, 3, 4, 5].map((id) => pool.query('SELECT id FROM orders WHERE id = $1', [id])),
+        ),
+      );
+
+      expect(dbSpans(scope)).toHaveLength(5);
+      // And each of them knows where it was issued from, which is the other
+      // half of what the queue used to swallow.
+      for (const span of dbSpans(scope)) {
+        expect(span.callsite?.relative).toContain('pg.integration.test.ts');
+      }
+    });
+
+    it('records no wait when a connection was free', async () => {
+      // The other half of the same claim: an uncontended pool must leave no
+      // number behind, or every query in the panel grows a lead-in it did
+      // not earn.
+      const scope = new RequestScope({ id: 'w2', method: 'GET', path: '/orders', options });
+
+      await runInScope(scope, () => pool.query('SELECT 1 AS one'));
+
+      expect(dbSpans(scope)[0]?.waitMs).toBeNull();
+    });
+
+    it('groups a real BEGIN…COMMIT into a transaction on one connection', async () => {
+      const scope = new RequestScope({ id: 't1', method: 'POST', path: '/pay', options });
+
+      await withClient((client) =>
+        runInScope(scope, async () => {
+          await client.query('BEGIN');
+          await client.query('SELECT id FROM orders WHERE id = $1', [1]);
+          await client.query('COMMIT');
+        }),
+      );
+
+      const connections = new Set(dbSpans(scope).map((span) => span.connectionId));
+      expect(connections.size).toBe(1);
+      expect(connections.has(null)).toBe(false);
+
+      const [transaction] = transactionsOf(scope.spans, 200);
+      expect(transaction?.queries).toHaveLength(1);
+      expect(transaction?.end?.sql).toBe('COMMIT');
+    });
+
     it('finds N+1 in a loop over the pool', async () => {
       const scope = new RequestScope({ id: 'p2', method: 'GET', path: '/orders', options });
 
@@ -226,9 +316,13 @@ function suite(name: string, backend: Backend, enabled: boolean): void {
             duplicateHttp: null,
             duplicateCache: null,
             slowBudget: null,
+            slowCode: null,
+            heavyResponse: null,
+            poolWait: null,
+            transactionHold: null,
           },
         },
-        { durationMs: 50, status: 200 },
+        { durationMs: 50, status: 200, bytesOut: null, contentType: null },
       );
 
       expect(findings).toHaveLength(1);
@@ -253,6 +347,9 @@ function suite(name: string, backend: Backend, enabled: boolean): void {
         status: 200,
         durationMs: 1,
         startedAt: Date.now(),
+        timing: timingOf(scope.spans, 12),
+        host: null,
+        weight: { bytesIn: null, bytesOut: null, rows: 0, biggestRows: 0 },
         spans: scope.spans,
         findings: [],
         requestHeaders: {},
@@ -263,6 +360,7 @@ function suite(name: string, backend: Backend, enabled: boolean): void {
         error: null,
         droppedSpans: 0,
         droppedLogs: 0,
+        cost: null,
         test: null,
       } satisfies RecordedRequest;
 

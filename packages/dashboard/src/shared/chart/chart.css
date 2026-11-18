@@ -1,0 +1,175 @@
+/*
+ * The chart language, shared by the history plot and the route charts.
+ *
+ * These used to sit in whichever screen happened to need them first, so the
+ * history screen was styled by `routes.css`. A widget two screens draw needs a
+ * sheet of its own, or the next one to change it changes the other by accident.
+ */
+
+.chart-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.chart-svg {
+  display: block;
+  width: 100%;
+  height: 64px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+/* Lines are drawn in the SVG's own units and then stretched, so the stroke
+   has to be told not to stretch with them. */
+.chart-svg polyline {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.chart-p95 {
+  stroke: var(--acc);
+}
+
+/* The band between the middle and the tail. Filled rather than outlined: an
+   outline would be two more lines, which is the thing it replaces. */
+.chart-spread {
+  fill: var(--acc);
+  opacity: 0.2;
+  stroke: none;
+}
+
+.chart-errors {
+  fill: var(--err);
+}
+
+.chart-calls {
+  fill: var(--fg3);
+}
+
+/* A selected column must not read as a tall bar.
+ *
+ * A filled band from floor to ceiling is the same shape the throughput chart
+ * draws its data with, and at full height it looked like the tallest sample
+ * on the chart — a spike that was not there. It is a faint wash with a mark
+ * along the top edge instead: the way a selected tab is marked, which is what
+ * this is. */
+.chart-selected {
+  /* Neutral, not the accent: the accent is what the data is drawn in, and a
+     blue band in a chart of blue lines reads as one of them. */
+  fill: var(--fg);
+  opacity: 0.08;
+}
+
+.chart-marker {
+  fill: var(--acc);
+}
+
+/* One control per chart, and it looks like the plot rather than like a
+   button: the affordance is the cursor and the band under it. */
+.chart-plot {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.chart-plot:focus-visible {
+  outline: 1px solid var(--acc);
+  outline-offset: 2px;
+}
+
+/* Nothing was recorded here. Drawn, because an empty middle between two
+   marks reads as a broken chart rather than as a route nothing called. */
+.chart-void {
+  opacity: 0.5;
+}
+
+.chart-hatch {
+  stroke: var(--line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The stretch under a drag, while it is being dragged. */
+.chart-drag {
+  fill: var(--acc);
+  opacity: 0.18;
+}
+
+.chart-hover {
+  fill: var(--fg);
+  opacity: 0.07;
+}
+
+/* A single column of traffic: the line has nowhere to go, so it is a point. */
+.chart-dot {
+  stroke: none;
+}
+
+.chart-dot.chart-p95 {
+  fill: var(--acc);
+}
+
+/* Shared by the history plot and the route charts — one feel everywhere.
+   The caller positions it; everything else is here. */
+.chart-peek {
+  position: absolute;
+  top: 14px;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: 380px;
+  max-width: calc(100% - 16px);
+  padding: 8px 10px;
+  background: var(--bg2);
+  border: 1px solid var(--line3);
+  border-radius: 3px;
+  font-size: 12px;
+  animation: charts-in var(--t-fast) ease-out;
+}
+
+.peek-head {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.peek-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+
+.peek-row:hover {
+  background: var(--bg3);
+}
+
+.peek-flag {
+  margin-left: 6px;
+}
+
+.peek-hint {
+  margin-top: 6px;
+  font-size: 10px;
+}

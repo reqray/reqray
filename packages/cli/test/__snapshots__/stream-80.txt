@@ -1,0 +1,14 @@
+   TIME         METHOD ST  PATH                               DUR    Q FLAGS
+   09:41:00.912 GET    200 /health                          1.2ms    —
+   09:41:01.244 GET    200 /api/users/me                     12ms   2q
+   09:41:02.184 GET    200 /api/orders                       47ms   6q
+   09:41:02.410 GET    304 /static/app.js                   0.8ms    —
+   09:41:03.077 POST   201 /api/orders                      118ms   9q
+   09:41:04.512 GET    200 /api/products?…                   61ms   4q
+   09:41:05.980 PATCH  200 /api/orders/8812/status           38ms   3q
+   09:41:09.660 DELETE 204 /api/carts/9f21/items/3           21ms   2q
+!  09:42:10.184 GET    200 /api/orders                      512ms  51q N+1
+!  09:42:12.184 GET    200 /api/report                      604ms  63q SLOW
+   09:42:13.184 GET    200 /api/profile/1                   9.4ms   2q TEST
+!! 09:43:02.184 POST   500 /api/orders                      2.14s  12q ERR
+!  09:44:01.184 GET    200 /api/…/latest/logs?…             318ms   8q

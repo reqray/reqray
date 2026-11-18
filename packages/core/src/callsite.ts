@@ -9,7 +9,43 @@
 import { isAbsolute, relative as pathRelative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ResolvedStackOptions } from './config.js';
-import { type CallsiteRecord, loupeState } from './state.js';
+import { pendingCallsite } from './context.js';
+import { globalSlot, TwoGenerationCache } from './state.js';
+
+/** What is known about where a fingerprint is issued from. */
+interface CallsiteRecord {
+  callsite: Callsite | null;
+  /** How many stacks have been captured for this fingerprint. */
+  samples: number;
+  /**
+   * The same SQL has been seen coming from more than one place.
+   *
+   * Attributing it to either one would be a lie, so nothing is attributed —
+   * and the N+1 detector, which needs a single origin, stays silent.
+   */
+  ambiguous: boolean;
+}
+
+/**
+ * What has been learned about each fingerprint's origin.
+ *
+ * Process-wide, not per request: capturing a stack is the single most
+ * expensive thing Reqray does, and in production it is paid only while the
+ * origin of a fingerprint is still unknown.
+ *
+ * Bounded, which it was not. Every sibling cache has had a ceiling from the
+ * start with a comment about applications that build SQL dynamically; this one
+ * has the same key space and had no ceiling at all, so such an application
+ * leaked a record per distinct statement, for the life of the process, inside
+ * somebody else's production.
+ */
+const CACHE_LIMIT = 5_000;
+
+const learnedCallsites = globalSlot(
+  'callsite.learned',
+  () => new TwoGenerationCache<string, CallsiteRecord>(CACHE_LIMIT),
+);
+
 import type { Callsite } from './types.js';
 
 /** `at fn (/path/file.ts:12:34)` — frame with a function name. */
@@ -100,9 +136,9 @@ export function findProjectFrame(stack: string, options: ResolvedStackOptions): 
  * broken request.
  *
  * @param boundary the instrumentation's wrapper function. Every frame up to
- * and including it is dropped, so the top frame is user code rather than Loupe
+ * and including it is dropped, so the top frame is user code rather than Reqray
  * itself. The `node_modules` filter cannot be relied on here: when developing
- * against a linked copy of Loupe its sources sit inside the project root, and
+ * against a linked copy of Reqray its sources sit inside the project root, and
  * the first "project code" line would be the interceptor itself.
  */
 export function captureCallsite(
@@ -138,7 +174,7 @@ export interface HandedCallsite {
  * still there and hands it down through this context.
  */
 export function withHandedCallsite<T>(handed: HandedCallsite, fn: () => T): T {
-  return loupeState().pendingCallsite.run(handed, fn);
+  return pendingCallsite().run(handed, fn);
 }
 
 /**
@@ -148,7 +184,7 @@ export function withHandedCallsite<T>(handed: HandedCallsite, fn: () => T): T {
  * wrapper should capture a stack of its own.
  */
 export function handedCallsite(): HandedCallsite | undefined {
-  return loupeState().pendingCallsite.getStore();
+  return pendingCallsite().getStore();
 }
 
 /**
@@ -187,14 +223,14 @@ export function resolveCallsite(
     // only add a way to be wrong: one unlucky pair of call sites anywhere in
     // the process would permanently mute a whole query shape.
     // Without an explicit boundary this function is the boundary, otherwise
-    // the top frame would be Loupe's own code.
+    // the top frame would be Reqray's own code.
     const from = boundary ?? resolveCallsite;
 
     if (scope.options.stack.maxPerFingerprint === Number.POSITIVE_INFINITY) {
       return captureCallsite(scope.options.stack, from);
     }
 
-    const learned = loupeState().callsites;
+    const learned = learnedCallsites();
     const known = learned.get(fingerprint);
     if (known?.ambiguous) return null;
 
@@ -209,7 +245,7 @@ export function resolveCallsite(
 }
 
 function remember(
-  learned: Map<string, CallsiteRecord>,
+  learned: TwoGenerationCache<string, CallsiteRecord>,
   fingerprint: string,
   known: CallsiteRecord | undefined,
   captured: Callsite | null,
@@ -231,7 +267,17 @@ function remember(
   }
 }
 
+/**
+ * How many stacks have been captured for a fingerprint so far.
+ *
+ * Asked by `RequestScope.shouldCaptureStack`, which decides whether to pay for
+ * another. The count lives here because the map does.
+ */
+export function samplesFor(fingerprint: string): number {
+  return learnedCallsites().get(fingerprint)?.samples ?? 0;
+}
+
 /** Forgets what was learned about fingerprint origins. Needed by tests. */
 export function resetLearnedCallsites(): void {
-  loupeState().callsites.clear();
+  learnedCallsites().clear();
 }

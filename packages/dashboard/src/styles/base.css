@@ -1,10 +1,10 @@
 /*
  * Global shell and shared primitives.
  *
- * Sizes come from the design spec and are deliberate: this is an
- * instrument panel, kept dense but readable. The font scale stops at 16px,
- * radius exists only on nav items, chips and the theme control, and the only
- * shadows are the 2px inset ticks and the drawer seam.
+ * Sizes come from the redesign handoff and are deliberate: this is an
+ * instrument panel, one mono family, kept dense but readable. The scale stops
+ * at 13px, radius exists only on controls (3px) and tags (2px), and the only
+ * shadows are functional insets — selection ticks and the drawer seam.
  */
 
 *,
@@ -23,8 +23,8 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--ui);
-  font-size: 14px;
+  font-family: var(--mono);
+  font-size: 12px;
   /* Nothing scrolls the page itself — only designated inner regions. */
   overflow: hidden;
 }
@@ -60,6 +60,40 @@ textarea {
   }
 }
 
+/* What a table looks like while it is being read: rows at the height the
+   real ones will have, so nothing jumps when the answer lands. */
+.skeleton {
+  padding: 4px 0;
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  height: var(--row);
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line2);
+}
+
+.skeleton-bar {
+  height: 8px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--track) 0%, var(--bg3) 50%, var(--track) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s linear infinite;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* The reduced-motion rule above stops the sweep by making it instant; the
+   bars then sit still, which is still the shape of the answer. */
+
 /* One switch for all motion: people who ask for less get none. `!important`
    is required — the waterfall stagger is an inline style, and nothing weaker
    outranks inline styles. */
@@ -87,8 +121,8 @@ textarea {
 /* Section label: mono 10px uppercase, used above every block. */
 .label {
   font-family: var(--mono);
-  font-size: 12px;
-  letter-spacing: 0.07em;
+  font-size: 10px;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--fg3);
 }
@@ -144,9 +178,20 @@ textarea {
   transform: rotate(45deg);
 }
 
+/* Unacknowledged findings exist — the tab says so before it is opened. */
+.nav-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--err-bar);
+  vertical-align: 2px;
+}
+
 .brand-word {
   font-family: var(--mono);
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -168,7 +213,7 @@ textarea {
   border-radius: 3px;
   background: transparent;
   color: var(--fg3);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -193,6 +238,12 @@ textarea {
   font-family: var(--mono);
   font-size: 13px;
   color: var(--fg2);
+  /* The header is one fixed-height row: this text has to give way rather than
+     wrap inside it. It is the least important thing up there. */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pulse {
@@ -282,7 +333,7 @@ textarea {
   border-radius: 3px;
   background: transparent;
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 11px;
   color: var(--fg2);
   flex: none;
   cursor: pointer;
@@ -311,7 +362,7 @@ textarea {
   background: transparent;
   color: var(--fg2);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 11px;
   cursor: pointer;
 }
 
@@ -323,10 +374,13 @@ textarea {
 .btn-primary {
   padding: 6px 13px;
   border: 0;
-  background: var(--acc);
-  color: var(--bg);
+  /* The deep blue, not the accent: a filled control is louder than a link
+     and the handoff keeps only one at that volume. Light text on it in both
+     themes — the fill does not flip with the surface. */
+  background: var(--acc-deep);
+  color: oklch(0.988 0.003 106.4);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -341,7 +395,7 @@ textarea {
   background: transparent;
   color: var(--acc);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
 }
 
@@ -506,4 +560,83 @@ textarea {
 
 .keys-key {
   color: var(--acc);
+}
+
+/* ── ⌘K: the command palette ─────────────────────────────────────────── */
+
+/* Over everything, dimming nothing much: the panel behind stays readable,
+   because half the entries are about what is currently on it. */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgb(0 0 0 / 25%);
+}
+
+.palette {
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg2);
+  border: 1px solid var(--line3);
+  border-radius: 3px;
+  animation: rise-in var(--t-fast) ease-out;
+}
+
+.palette-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.palette-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) minmax(0, 45%);
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.palette-row[data-active="true"] {
+  background: var(--bg3);
+  box-shadow: inset 2px 0 0 0 var(--acc);
+}
+
+.palette-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.palette-hint {
+  text-align: right;
+  font-size: 11px;
+}
+
+.palette-empty {
+  padding: 12px;
+  font-size: 12px;
+}
+
+.palette-foot {
+  padding: 6px 12px 8px;
+  border-top: 1px solid var(--line2);
+  font-size: 10px;
 }

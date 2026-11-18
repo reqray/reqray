@@ -1,10 +1,10 @@
 # The staging shape: the application only collects and ships batches, the
-# collector stores them and serves the panel. This is how Loupe is meant to
+# collector stores them and serves the panel. This is how Reqray is meant to
 # run anywhere the process is reachable from outside.
 #
 #   docker compose -f docker-compose.staging.yml up --build
-#   open http://localhost:3000/api/orders                  — the N+1 route
-#   open http://localhost:4300/auth?token=staging-secret   — the panel, on the collector
+#   open http://localhost:4300/auth?token=staging-secret   — the panel, on the
+#     collector, and already filling: the demo calls its own routes on a loop
 #
 # The token is a fixed demo value. On a real staging it comes from a secret.
 
@@ -20,6 +20,14 @@ services:
       timeout: 3s
       retries: 30
 
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   collector:
     build:
       context: .
@@ -28,7 +36,17 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: '4300'
-      LOUPE_TOKEN: staging-secret
+      REQRAY_TOKEN: staging-secret
+      # A collector that forgets on restart is a buffer. The volume is what
+      # makes yesterday answerable.
+      REQRAY_DB: /var/lib/reqray/requests.db
+      # The same requests as a file per day, for whatever ships logs off
+      # this box. One retention setting covers both, and the panel can
+      # change it.
+      REQRAY_LOG: /var/lib/reqray/log
+      REQRAY_DAYS: '7'
+    volumes:
+      - reqray-history:/var/lib/reqray
     ports:
       - '4300:4300'
     healthcheck:
@@ -47,16 +65,22 @@ services:
     build:
       context: .
     ports:
-      - '3000:3000'
+      - '3100:3000'
     environment:
       HOST: 0.0.0.0
       PORT: '3000'
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
-      LOUPE_MODE: staging
-      LOUPE_SERVER_URL: http://collector:4300
-      LOUPE_TOKEN: staging-secret
+      REDIS_URL: redis://redis:6379
+      REQRAY_MODE: staging
+      REQRAY_SERVER_URL: http://collector:4300
+      REQRAY_TOKEN: staging-secret
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       collector:
         condition: service_healthy
+
+volumes:
+  reqray-history:

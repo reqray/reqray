@@ -1,12 +1,13 @@
 import {
-  clearDiagnostics,
+  createReqray,
   type DiagnosticEntry,
   getDiagnostics,
   printDiagnostics,
   renderDiagnostics,
   reportInstrumentation,
   setLogSink,
-} from '@loupe/core';
+} from '@reqray/core';
+import { clearDiagnostics, resetDiagnosticsPrinted } from '@reqray/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
@@ -22,8 +23,8 @@ const entries: DiagnosticEntry[] = [
     name: 'prisma',
     captures: 'SQL',
     ok: false,
-    reason: 'found, but loaded before loupe',
-    hint: 'start with `node --import @loupe/register`',
+    reason: 'found, but loaded before reqray',
+    hint: 'start with `node --import @reqray/register`',
   },
 ];
 
@@ -31,12 +32,12 @@ describe('startup diagnostics', () => {
   it('prints the promised startup report', () => {
     expect(renderDiagnostics(entries)).toBe(
       [
-        'loupe  instrumentation active',
+        'reqray  instrumentation active',
         '  ✔ fastify@5.2.0        requests',
         '  ✔ pg@8.13.1            SQL',
         '  ✔ undici (built-in)    outgoing HTTP',
-        '  ✘ prisma               found, but loaded before loupe',
-        '                         → start with `node --import @loupe/register`',
+        '  ✘ prisma               found, but loaded before reqray',
+        '                         → start with `node --import @reqray/register`',
       ].join('\n'),
     );
   });
@@ -49,7 +50,7 @@ describe('startup diagnostics', () => {
   });
 
   it('an empty report is a single header line', () => {
-    expect(renderDiagnostics([])).toBe('loupe  instrumentation not attached');
+    expect(renderDiagnostics([])).toBe('reqray  instrumentation not attached');
   });
 
   it('accumulates entries and prints them through the logger', () => {
@@ -62,5 +63,22 @@ describe('startup diagnostics', () => {
     printDiagnostics();
     expect(info).toHaveBeenCalledOnce();
     expect(info.mock.calls[0]?.[0]).toContain('✔ fastify@5.2.0');
+  });
+
+  it.each([
+    [undefined, true],
+    ['open' as const, false],
+  ])('says a panel with gate %s answers this machine only: %s', async (gate, said) => {
+    // The 403 is otherwise met from inside a dev container, with nothing at
+    // startup having mentioned that a gate was missing.
+    const info = vi.fn();
+    setLogSink({ info, warn: vi.fn() });
+    resetDiagnosticsPrinted();
+
+    const reqray = createReqray({ mode: 'development', ...(gate ? { panel: { gate } } : {}) });
+    await new Promise((resolve) => setImmediate(resolve));
+    await reqray.close();
+
+    expect(String(info.mock.calls[0]?.[0]).includes('answers this machine only')).toBe(said);
   });
 });

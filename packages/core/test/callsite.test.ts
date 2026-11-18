@@ -4,11 +4,11 @@ import {
   isProjectFrame,
   parseStackFrame,
   RequestScope,
-  resetLearnedCallsites,
   resolveCallsite,
   resolveOptions,
   withHandedCallsite,
-} from '@loupe/core';
+} from '@reqray/core';
+import { resetLearnedCallsites } from '@reqray/core/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 
 afterEach(() => {
@@ -121,7 +121,7 @@ describe('stack capture', () => {
     expect(callsite?.relative).toContain('callsite.test.ts');
   });
 
-  it('does not show internal Loupe frames', () => {
+  it('does not show internal Reqray frames', () => {
     const callsite = captureCallsite(resolveOptions().stack);
     expect(callsite?.file).not.toContain('/src/callsite.ts');
   });
@@ -136,18 +136,18 @@ describe('stack capture', () => {
 
     // This is what a driver interceptor looks like: its own frames sit between
     // user code and the stack capture, and they must not end up in the
-    // callsite. When developing against a linked copy of Loupe the
+    // callsite. When developing against a linked copy of Reqray the
     // `node_modules` filter does not help — the sources live inside the
     // project root.
-    function loupeQuery(withBoundary: boolean) {
+    function reqrayQuery(withBoundary: boolean) {
       function instrumentationInternals() {
-        return withBoundary ? captureCallsite(options, loupeQuery) : captureCallsite(options);
+        return withBoundary ? captureCallsite(options, reqrayQuery) : captureCallsite(options);
       }
       return instrumentationInternals();
     }
 
-    const insideInstrumentation = loupeQuery(false);
-    const insideUserCode = loupeQuery(true);
+    const insideInstrumentation = reqrayQuery(false);
+    const insideUserCode = reqrayQuery(true);
 
     expect(insideInstrumentation?.line).not.toBe(insideUserCode?.line);
     // With the boundary the top frame becomes the call line in user code.

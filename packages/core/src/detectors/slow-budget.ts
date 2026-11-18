@@ -9,8 +9,8 @@
  */
 
 import type { RequestScope } from '../scope.js';
+import { coveredMs, timingOf } from '../timing.js';
 import type { Finding } from '../types.js';
-import { isHttp } from './duplicates.js';
 import type { Detector, FinishedRequest } from './types.js';
 
 export interface SlowBudgetOptions {
@@ -18,16 +18,33 @@ export interface SlowBudgetOptions {
   readonly budgetMs: number;
 }
 
-/** Where the time went, in the words the card uses. */
-function breakdown(scope: RequestScope): { externalMs: number; sqlMs: number } {
-  let externalMs = 0;
-  let sqlMs = 0;
-  for (const span of scope.spans) {
-    if (isHttp(span)) externalMs += span.duration;
-    else if (span.kind === 'db') sqlMs += span.duration;
-  }
-  return { externalMs, sqlMs };
+/**
+ * Where the time went — the same arithmetic the header line uses.
+ *
+ * Unions rather than sums, so a `Promise.all` of four 200 ms calls inside a
+ * 300 ms request is 300 ms of waiting and not 800 ms of it. A hint drawn from
+ * a figure larger than the request it describes is worse than no hint.
+ */
+function breakdown(scope: RequestScope, durationMs: number) {
+  return timingOf(scope.spans, durationMs);
 }
+
+/**
+ * Of the time spent in the database layer, how much was spent queueing.
+ *
+ * A union, like everything else here: queries issued together queue together.
+ */
+function queuedMs(scope: RequestScope): number {
+  const waits: Array<{ start: number; end: number }> = [];
+  for (const span of scope.spans) {
+    if (span.kind !== 'db' || !span.waitMs) continue;
+    waits.push({ start: span.startedAt - span.waitMs, end: span.startedAt });
+  }
+  return waits.length === 0 ? 0 : coveredMs(waits);
+}
+
+/** Above this share, the queue rather than the layer is what to look at. */
+const MOSTLY_QUEUE = 0.5;
 
 export const slowBudget: Detector<SlowBudgetOptions> = {
   id: 'slow_budget',
@@ -40,19 +57,32 @@ export const slowBudget: Detector<SlowBudgetOptions> = {
   run(scope: RequestScope, options: SlowBudgetOptions, request: FinishedRequest): Finding[] {
     if (request.durationMs <= options.budgetMs) return [];
 
-    const { externalMs, sqlMs } = breakdown(scope);
-    const externalShare = Math.round((externalMs / request.durationMs) * 100);
-    const sqlShare = Math.round((sqlMs / request.durationMs) * 100);
-    const uncovered = Math.max(0, request.durationMs - externalMs - sqlMs);
+    const timing = breakdown(scope, request.durationMs);
+    const share = (ms: number) => Math.round((ms / request.durationMs) * 100);
 
-    // The largest share leads the hint; if nothing instrumented dominates,
-    // the honest answer is that the time is in the application's own code.
+    // The layer that actually holds the time leads the hint — the largest
+    // one, not the first one that is above zero. A request that spent 99% of
+    // itself in application code must not be sent to look at the one query
+    // that took a millisecond.
+    const layers: Array<[string, number]> = [
+      ['external HTTP calls', timing.externalMs],
+      ['SQL', timing.sqlMs],
+      ['the cache', timing.cacheMs],
+    ];
+    const [label, ms] = layers.reduce((most, layer) => (layer[1] > most[1] ? layer : most));
+
+    // A layer can hold the time without being the reason for it. Queries
+    // that spent most of their lives waiting for a free connection put the
+    // whole wait under "SQL", and sending the reader to the queries would be
+    // sending them past the finding directly above this one.
+    const queued = label === 'SQL' ? queuedMs(scope) : 0;
+
     const hint =
-      externalMs >= sqlMs && externalShare > 0
-        ? `${externalShare}% of the time went to external HTTP calls — start there.`
-        : sqlShare > 0 && sqlMs > externalMs
-          ? `${sqlShare}% of the time went to SQL — start there.`
-          : `Most of the time (${Math.round((uncovered / request.durationMs) * 100)}%) is not covered by any instrumentation: it is application code, a timer, or something Loupe does not see.`;
+      ms <= timing.selfMs
+        ? `Most of the time (${share(timing.selfMs)}%) is not covered by any instrumentation: it is application code, a timer, or something Reqray does not see.`
+        : queued > ms * MOSTLY_QUEUE
+          ? `${share(ms)}% of the time went to SQL — but ${share(queued)}% of the request was queueing for a free connection, not querying. The pool is the constraint, not the query.`
+          : `${share(ms)}% of the time went to ${label} — start there.`;
 
     return [
       {
@@ -66,8 +96,8 @@ export const slowBudget: Detector<SlowBudgetOptions> = {
           kind: 'budget',
           durationMs: request.durationMs,
           budgetMs: options.budgetMs,
-          externalMs,
-          sqlMs,
+          externalMs: timing.externalMs,
+          sqlMs: timing.sqlMs,
           spanIds: [],
         },
         hint,

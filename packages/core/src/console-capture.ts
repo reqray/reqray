@@ -24,7 +24,7 @@ import { sensitivePatternIn, truncate } from './redact.js';
 import type { LogEntry } from './types.js';
 
 /** "Already patched" marker: two copies of core must not stack wrappers. */
-const PATCHED = Symbol.for('loupe.patched.console');
+const PATCHED = Symbol.for('reqray.patched.console');
 
 const METHODS = ['log', 'info', 'warn', 'error', 'debug'] as const;
 type ConsoleMethod = (typeof METHODS)[number];
@@ -56,7 +56,7 @@ function capture(method: ConsoleMethod, args: readonly unknown[]): void {
 }
 
 /**
- * Installs the console tap. Idempotent; called by `createLoupe`.
+ * Installs the console tap. Idempotent; called by `createReqray`.
  *
  * Whether a line is recorded is decided per request from `scope.options`, so
  * one global tap serves any number of runtimes.
@@ -71,7 +71,7 @@ export function instrumentConsole(): void {
     if (typeof original !== 'function') continue;
     originals[method] = original;
 
-    holder[method] = function loupeConsole(this: unknown, ...args: unknown[]) {
+    holder[method] = function reqrayConsole(this: unknown, ...args: unknown[]) {
       capture(method, args);
       return (original as (...inner: unknown[]) => unknown).apply(this, args);
     };
