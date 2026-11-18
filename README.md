@@ -426,11 +426,21 @@ not objects.
 is over this project's own target of +0.5 ms.** The request takes 2–3 ms at
 p99 without Reqray and 4–5 ms with it, in all three runs — a consistent
 reading, not a lucky or unlucky one. The median does not move. Development
-mode costs the same or more, with one run of the three at +15 ms. The likely
-cause is allocation rather than work on the request path — the heap column is
-what V8 has to collect, and collection pauses land in the tail — but that has
-not been bisected yet. Until it is brought down, treat +3 ms p99 as the price
-in production mode and decide with that number.
+mode costs the same or more, with one run of the three at +15 ms. Until it
+is brought down, treat +3 ms p99 at this load as the price in production mode
+and decide with that number.
+
+**What that tail is made of.** Not work on the request path: a CPU profile
+puts Reqray's own code at 2–4 µs per request, and measured directly — one
+connection, requests one after another, against the embedded database —
+production mode adds about 5 µs to the median request and 40 µs at p99. What is left is
+memory. Reqray allocates about 5 KB per request for the scope, the spans and
+the wrappers around the driver, which means more young-generation collections,
+and at 1000 rps over 20 connections each pause lands on everything in flight
+and queues what arrives behind it. `node --max-semi-space-size=4` halves the
+effect — about +1 ms p99 and +8…11 MB of heap in the same scenario — because
+smaller collections are shorter ones. Bringing the allocation itself down is
+the next piece of work.
 
 **On a typical request the difference is inside the noise.** The baseline's
 own p99 ranged from 13 to 24 ms across the three runs, and the deltas for
@@ -444,10 +454,10 @@ and bodies. Production is +5.9…14 MB against a +15 budget, development up to
 occupies under load on top of the baseline: it is tens of megabytes to over
 a hundred larger not because of Reqray's data but because of V8 policy — under any noticeable
 per-request allocation churn it inflates the young generation, trading memory
-for speed, and gives it back when idle. Verified by bisection: the entire
-difference appears at the span-recording layer at ~2 MB/s of allocations, and
-with `node --max-semi-space-size=4` it collapses to +8 MB with no latency
-loss at this load — which is exactly the recommendation for memory-constrained
+for speed, and gives it back when idle. Measured with an allocation profile: about
+5 MB/s at this load, spread over the scope, the spans and the driver
+wrappers, and with `node --max-semi-space-size=4` it collapses to +8…11 MB
+with a smaller latency delta, not a larger one — which is exactly the recommendation for memory-constrained
 deployments. RSS is not shown in the table: on macOS it is a high-water mark
 that does not come down even after V8 has returned the memory, and its deltas
 measure GC timing luck.
