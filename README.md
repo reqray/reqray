@@ -4,6 +4,8 @@ A dev panel and request-inspection tool for Node.js. Plugs in with a single
 line, instruments HTTP and SQL on its own, shows every request as a waterfall,
 and finds N+1 **down to the file, the line, and the time saved**.
 
+![A request arrives, is flagged N+1, and one click shows the line and the fix](docs/screenshots/00-demo.gif)
+
 Think Laravel Telescope for the Node ecosystem, with two differences: the
 instrumentation is fully automatic — no `recordQuery` calls in your code — and
 the core is designed for production, not just localhost.
