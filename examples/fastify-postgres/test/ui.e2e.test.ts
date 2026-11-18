@@ -1218,15 +1218,16 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
       const strip = await fresh.$eval('.breakdown', (node) => node.textContent ?? '');
       expect(strip).toContain('loop behind');
 
-      const note = await fresh.$eval(
-        '.breakdown-note.s-warn',
-        (node) => node.getAttribute('title') ?? '',
+      // Every warning in the strip, not the first: on a slow machine the
+      // processor-time note is a warning too, and it comes before this one.
+      const notes = await fresh.$$eval('.breakdown-note.s-warn', (nodes) =>
+        nodes.map((node) => node.getAttribute('title') ?? ''),
       );
       // Said as a property of the process. Under load the code that blocked
       // the loop is usually somebody else's, and a panel that reads "this
       // request burned 270 ms of CPU" would be wrong often enough to make
       // every other number on the screen suspect.
-      expect(note).toContain('the process, not this request');
+      expect(notes.some((note) => note.includes('the process, not this request'))).toBe(true);
     } finally {
       await fresh.close();
     }
@@ -1239,14 +1240,16 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
         nodes.map((node) => node.textContent ?? ''),
       );
       const select = labels.findIndex((label) => label.includes('SELECT'));
-      const gap = labels.findIndex((label) => label.includes('uninstrumented'));
       const insert = labels.findIndex((label) => label.includes('INSERT'));
+      const between = labels.slice(select + 1, insert);
 
       // Bars are sorted by start time: the hashing sits after the email check
       // and before the INSERT — the timeline places it, not just counts it.
+      // Looked for between the two, not as "the first gap there is": a slow
+      // machine has one before the first query as well.
       expect(select).toBeGreaterThanOrEqual(0);
-      expect(gap).toBeGreaterThan(select);
-      expect(insert).toBeGreaterThan(gap);
+      expect(insert).toBeGreaterThan(select);
+      expect(between.some((label) => label.includes('uninstrumented'))).toBe(true);
     } finally {
       await fresh.close();
     }
@@ -1312,10 +1315,13 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
     await page.waitForSelector('.drawer');
     await shoot('04-replay');
 
-    await (await page.$('.drawer .btn-primary'))?.click();
-    await page.waitForFunction(
-      () => (document.querySelector('.replay-note')?.textContent ?? '').includes('replayed'),
-      { timeout: 20_000 },
+    // Clicked in the page rather than with the mouse: the drawer is still
+    // sliding in, and a click aimed at where the button was a frame ago lands
+    // on nothing — after which this waited out the whole test for a replay
+    // that was never sent.
+    await page.$eval('.drawer .btn-primary', (button) => (button as HTMLButtonElement).click());
+    await page.waitForFunction(() =>
+      (document.querySelector('.replay-note')?.textContent ?? '').includes('replayed'),
     );
 
     const comparison = await page.$eval('.comparison', (node) => node.textContent ?? '');
@@ -1840,14 +1846,39 @@ describe.skipIf(!chromePath)('the panel in a browser', () => {
       node.dispatchEvent(new PointerEvent('pointerup', options));
     }, fraction);
 
-  /** Walks the plot until the readout names a column with traffic; the
-   * store's window decides where the seeded requests landed. */
+  /** Hovers a point of the plot and returns what the readout then says. The
+   * pause is taken in the page, not here: the render the event caused is
+   * already queued there, and a timer set after it cannot fire before it —
+   * which a sleep on this side of the wire only hopes for. */
+  const readoutAt = (fraction: number) =>
+    page.evaluate(async (f: number) => {
+      const node = document.querySelector('.history-plot') as HTMLElement;
+      const rect = node.getBoundingClientRect();
+      node.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          clientX: rect.left + rect.width * f,
+          clientY: rect.top + rect.height / 2,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return document.querySelector('.history-foot .mono')?.textContent ?? '';
+    }, fraction);
+
+  /** Walks the plot, newest column first, until the readout names one with
+   * traffic. Every column, not a sample of them: the period runs from the
+   * first request to now, so where the run's traffic falls depends on how
+   * long the machine took to get here, and six guesses miss on a slow one. */
   const busyHistoryColumn = async (): Promise<number> => {
-    for (const fraction of [0.95, 0.85, 0.7, 0.5, 0.3, 0.1]) {
-      await hoverHistoryAt(fraction);
-      await new Promise((resolve) => setTimeout(resolve, 60));
-      const foot = await page.$eval('.history-foot .mono', (node) => node.textContent ?? '');
-      if (foot.includes('calls') && !foot.includes('nothing ran')) return fraction;
+    // The chart never draws more columns than this, so a step per column of
+    // the fullest chart lands in every column of a sparser one too.
+    const steps = 48;
+    for (let step = steps - 1; step >= 0; step--) {
+      const fraction = (step + 0.5) / steps;
+      const readout = await readoutAt(fraction);
+      // "14:02 · 12 calls · …", as against "14:02 · nothing ran" and the
+      // idle "312 calls · 48 columns · 2s each".
+      if (/^\d\d:\d\d.* calls · /.test(readout)) return fraction;
     }
     throw new Error('no busy column found on the history chart');
   };
