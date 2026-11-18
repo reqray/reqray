@@ -1,6 +1,6 @@
 {
   "name": "@reqray/nestjs",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Reqray NestJS adapter: a module in imports, nothing more.",
   "license": "MIT",
   "keywords": [

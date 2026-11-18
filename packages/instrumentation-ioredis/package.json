@@ -1,6 +1,6 @@
 {
   "name": "@reqray/instrumentation-ioredis",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "ioredis driver instrumentation for Reqray.",
   "license": "MIT",
   "keywords": [

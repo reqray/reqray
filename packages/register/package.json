@@ -1,6 +1,6 @@
 {
   "name": "@reqray/register",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Loader hooks (CJS + ESM) for automatic Reqray instrumentation.",
   "license": "MIT",
   "keywords": [

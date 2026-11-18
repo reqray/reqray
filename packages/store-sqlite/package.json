@@ -1,6 +1,6 @@
 {
   "name": "@reqray/store-sqlite",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "SQLite storage for Reqray: a request history that outlives the process.",
   "license": "MIT",
   "keywords": [

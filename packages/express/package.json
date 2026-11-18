@@ -1,6 +1,6 @@
 {
   "name": "@reqray/express",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Express adapter for Reqray.",
   "license": "MIT",
   "keywords": [

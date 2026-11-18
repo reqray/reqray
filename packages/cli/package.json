@@ -1,6 +1,6 @@
 {
   "name": "@reqray/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Reqray from the terminal: a live request stream and a full breakdown of one request.",
   "license": "MIT",
   "keywords": [

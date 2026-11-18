@@ -1,6 +1,6 @@
 {
   "name": "@reqray/instrumentation-undici",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Outgoing HTTP instrumentation (undici / built-in fetch) for Reqray.",
   "license": "MIT",
   "keywords": [

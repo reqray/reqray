@@ -1,6 +1,6 @@
 {
   "name": "@reqray/fastify",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Fastify adapter for Reqray.",
   "license": "MIT",
   "keywords": [
